@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { usePlayerStore } from '../stores/usePlayerStore'
 import { useMissionStore } from '../stores/useMissionStore'
+import { useGameStore, GameState } from '../stores/useGameStore'
 
 // Sporer zombie-drap for kill_count-misjoner
 let _lastKillCount = 0
@@ -97,6 +98,11 @@ export default function MissionSystem() {
 
       if (allComplete) {
         store.completeMission(mission.id)
+
+        // Sjekk om misjonen gir seier
+        if (mission.unlocks && mission.unlocks.includes('victory')) {
+          useGameStore.getState().setState(GameState.VICTORY)
+        }
       }
     }
   })

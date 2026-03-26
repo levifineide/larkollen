@@ -3,12 +3,17 @@ import { create } from 'zustand'
 export const usePlayerStore = create((set, get) => ({
   health: 100,
   stamina: 100,
-  position: [0, 2, 0],
+  position: [0, 2, 48],
   isDriving: false,
   activeVehicleId: null,
   isCrouching: false,
   isSprinting: false,
   pendingTeleport: null,
+
+  // Vanntilstand
+  isInWater: false,
+  isSwimming: false,
+  waterDepth: 0,
 
   // Våpensystem
   activeWeapon: 'pistol',
@@ -29,6 +34,9 @@ export const usePlayerStore = create((set, get) => ({
   setStamina: (stamina) => set({ stamina: Math.max(0, Math.min(100, stamina)) }),
   setPosition: (position) => set({ position }),
   setPendingTeleport: (pos) => set({ pendingTeleport: pos }),
+
+  setWaterState: (isInWater, isSwimming, waterDepth) =>
+    set({ isInWater, isSwimming, waterDepth }),
 
   setDriving: (vehicleId) => set({ isDriving: !!vehicleId, activeVehicleId: vehicleId }),
   setIsCrouching: (isCrouching) => set({ isCrouching }),

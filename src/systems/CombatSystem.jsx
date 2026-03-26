@@ -66,6 +66,7 @@ export default function CombatSystem() {
     if (inputState.reload && wConfig.magSize > 0 && wState.mag < wConfig.magSize && wState.reserve > 0) {
       state.setIsReloading(true)
       reloadTimerRef.current = wConfig.reloadTime
+      window.dispatchEvent(new Event('weapon-reload'))
       return
     }
 

@@ -294,9 +294,50 @@ async function fetchMapboxElevation() {
 /** Modul-level høydefunksjon – settes i buildTerrain(), brukes av buildBuildings() */
 let getTerrainHeightAtLocal = (localX, localZ) => 0
 
+// ─── Vannsonekonstanter ─────────────────────────────────────────────
+const SEA_FLOOR = -4.0        // havbunn-Y i terrain.glb
+const WATER_HEIGHT_THRESHOLD = 2.0  // vertices under dette og utenfor land-polygoner → hav
+
+/**
+ * Last kystlinje-polygoner fra OSM og konverter til lokale koordinater.
+ * Returnerer array av turf-polygoner i lokal (UTM-relativ) koordinatsystem.
+ * Disse polygonene representerer LAND (halvøyer, øyer).
+ */
+function loadLandPolygons(geojson) {
+  const coastPolygons = geojson.features.filter(
+    f => f.properties?.natural === 'coastline' && f.geometry?.type === 'Polygon'
+  )
+  console.log(`  ${coastPolygons.length} kystlinje-polygoner funnet (landmasser)`)
+
+  const localPolygons = coastPolygons.map(f => {
+    const ring = f.geometry.coordinates[0].map(([lon, lat]) => {
+      const [localX, localNorthing] = toLocal(lon, lat)
+      return [localX, localNorthing]
+    })
+    // Sørg for at ringen er lukket
+    const first = ring[0], last = ring[ring.length - 1]
+    if (first[0] !== last[0] || first[1] !== last[1]) ring.push([...first])
+    return turf.polygon([ring])
+  })
+
+  return localPolygons
+}
+
+/**
+ * Sjekk om et punkt i lokale koordinater er innenfor et landområde.
+ * Returnerer true = land, false = potensielt hav.
+ */
+function isInsideLandPolygon(localX, localNorthing, landPolygons) {
+  const pt = turf.point([localX, localNorthing])
+  for (const poly of landPolygons) {
+    if (turf.booleanPointInPolygon(pt, poly)) return true
+  }
+  return false
+}
+
 // ─── Terrengbygging ────────────────────────────────────────────────
 
-async function buildTerrain(dtmPath) {
+async function buildTerrain(dtmPath, geojson) {
   console.log('\n── Bygger terreng ──')
 
   const RES = 512 // Økt oppløsning nå som vi har ekte høydedata
@@ -388,16 +429,31 @@ async function buildTerrain(dtmPath) {
   // Gjør tilgjengelig for andre funksjoner (bygninger, veier)
   getTerrainHeightAtLocal = getHeight
 
+  // ── Last kystlinje-polygoner for vanndeteksjon ──
+  const landPolygons = geojson ? loadLandPolygons(geojson) : []
+  let waterVertices = 0
+
   // Generer vertices
   for (let iz = 0; iz < RES; iz++) {
     for (let ix = 0; ix < RES; ix++) {
       const x = startX + ix * stepX
       const z = startZ + iz * stepZ
-      const y = getHeight(x, z)
+      let y = getHeight(x, z)
+
+      // Senk vannområder: vertex er hav hvis det er UTENFOR alle land-polygoner
+      // OG har lav høyde (under WATER_HEIGHT_THRESHOLD)
+      if (landPolygons.length > 0 && y < WATER_HEIGHT_THRESHOLD) {
+        if (!isInsideLandPolygon(x, z, landPolygons)) {
+          y = SEA_FLOOR
+          waterVertices++
+        }
+      }
+
       positions.push(x, y, -z)
       normals.push(0, 1, 0)
     }
   }
+  console.log(`  Vannvertices senket: ${waterVertices} av ${RES * RES} (${(waterVertices / (RES * RES) * 100).toFixed(1)}%)`)
 
   // Generer indices (CCW winding for opp-pekende normaler)
   for (let iz = 0; iz < RES - 1; iz++) {
@@ -885,7 +941,7 @@ async function main() {
   console.log(`  ${geojson.features.length} GeoJSON-features`)
 
   // Bygg alle komponenter
-  const hasRealElevation = await buildTerrain(dtmPath)
+  const hasRealElevation = await buildTerrain(dtmPath, geojson)
 
   const buildingsDoc = buildBuildings(geojson)
   if (buildingsDoc) await writeGLB(buildingsDoc, 'buildings.glb')

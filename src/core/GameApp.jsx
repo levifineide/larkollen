@@ -1,6 +1,7 @@
-import { Component, lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { Component, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { Physics } from '@react-three/rapier'
+import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 
 import { InputSystem } from '../systems/InputSystem'
@@ -16,8 +17,8 @@ import WeaponPickups from '../systems/WeaponPickups'
 import MissionSystem from '../systems/MissionSystem'
 import DayNightCycle from '../systems/DayNightCycle'
 import RainSystem from '../systems/RainSystem'
-import PostProcessing from '../systems/PostProcessing'
 import NetworkSystem from '../systems/NetworkSystem'
+import AudioSystem from '../systems/AudioSystem'
 import RemotePlayersRenderer from '../entities/Player/RemotePlayersRenderer'
 import HUD from '../ui/HUD'
 import WeaponWheel from '../ui/WeaponWheel'
@@ -25,7 +26,10 @@ import MissionPanel from '../ui/MissionPanel'
 import Minimap from '../ui/Minimap'
 import DialoguePanel from '../ui/DialoguePanel'
 import Lobby from '../ui/Lobby'
+import IntroSequence, { IntroOverlay } from '../ui/IntroSequence'
+import VictoryScreen from '../ui/VictoryScreen'
 import { useMultiplayerStore } from '../stores/useMultiplayerStore'
+import { useGameStore, GameState } from '../stores/useGameStore'
 
 /* ── Startskjerm ── */
 function StartScreen({ onStart, onMultiplayer }) {
@@ -157,40 +161,79 @@ function PointerLockOverlay() {
   )
 }
 
-// StatsGl fjernet – spiste ~2 FPS med sin useFrame callback
+// R3F-kompatibel loading fallback (vises inne i Canvas via drei Html)
+function R3FLoadingFallback() {
+  return (
+    <Html fullscreen>
+      <div style={{
+        width: '100vw',
+        height: '100vh',
+        background: 'linear-gradient(180deg, #0a0a0a 0%, #1a0505 100%)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontFamily: 'monospace',
+        color: '#fff',
+      }}>
+        <h1 style={{ fontSize: 36, margin: 0, color: '#e63946', textShadow: '0 0 30px rgba(230,57,70,0.4)' }}>
+          LARKOLLEN
+        </h1>
+        <p style={{ marginTop: 24, fontSize: 16, color: '#888' }}>Laster...</p>
+      </div>
+    </Html>
+  )
+}
 
-function Scene({ cameraYaw, cameraPitch }) {
+/*
+  Scene – én enkelt scene som veksler mellom intro og gameplay.
+  Bruker samme Canvas for å unngå dobbel WebGL-kontekst og asset-reloading.
+*/
+function Scene({ cameraYaw, cameraPitch, introPhase, onIntroComplete }) {
   return (
     <>
-      {/* Dag/natt-syklus styrer sol, himmel, ambient og fog */}
+      {/* Dag/natt-syklus – alltid aktiv */}
       <DayNightCycle />
       <fog attach="fog" args={['#c9d6df', 50, 300]} />
 
-      {/* Regn */}
-      <RainSystem />
+      {/* Regn – kun i gameplay */}
+      {!introPhase && <RainSystem />}
 
-      <Physics gravity={[0, -9.81, 0]}>
-        <LarkollenWorld />
-        <PlayerController cameraYaw={cameraYaw} />
-        <RemotePlayersRenderer />
-        <VehicleManager />
-        <ZombieManager />
-        <NPCManager />
-        <CombatSystem />
-        <ProjectileSystem />
-        <MissionSystem />
-      </Physics>
+      <Suspense fallback={<R3FLoadingFallback />}>
+        <Physics gravity={[0, -9.81, 0]}>
+          {/* Verdenen lastes én gang, gjenbrukes i intro og gameplay */}
+          <LarkollenWorld />
 
-      {/* Nettverkssynk – sender/mottar spillerdata */}
-      <NetworkSystem />
+          {/* Gameplay-elementer – kun når intro er ferdig */}
+          {!introPhase && (
+            <>
+              <PlayerController cameraYaw={cameraYaw} />
+              <RemotePlayersRenderer />
+              <VehicleManager />
+              <ZombieManager />
+              <NPCManager />
+              <CombatSystem />
+              <ProjectileSystem />
+              <MissionSystem />
+            </>
+          )}
+        </Physics>
+      </Suspense>
 
-      <CameraSystem cameraYaw={cameraYaw} cameraPitch={cameraPitch} />
+      {/* Intro: kameraflyvning med tekst */}
+      {introPhase && <IntroSequence onComplete={onIntroComplete} />}
 
-      {/* WeaponPickups utenfor Physics – trenger ikke fysikkmotor */}
-      <WeaponPickups />
+      {/* Audio – alltid aktiv (intro-musikk + gameplay-lyder) */}
+      <AudioSystem />
 
-      {/* Post-processing deaktivert – versjonsinkompatibilitet */}
-      {/* <PostProcessing /> */}
+      {/* Gameplay-systemer – kun etter intro */}
+      {!introPhase && (
+        <>
+          <NetworkSystem />
+          <CameraSystem cameraYaw={cameraYaw} cameraPitch={cameraPitch} />
+          <WeaponPickups />
+        </>
+      )}
     </>
   )
 }
@@ -198,16 +241,36 @@ function Scene({ cameraYaw, cameraPitch }) {
 export default function GameApp() {
   const [started, setStarted] = useState(false)
   const [showLobby, setShowLobby] = useState(false)
+  const [introPhase, setIntroPhase] = useState(true)
   const cameraYaw   = useRef(0)
   const cameraPitch = useRef(0.15)
 
   const gameStarted = useMultiplayerStore((s) => s.gameStarted)
   const isConnected = useMultiplayerStore((s) => s.isConnected)
   const ping = useMultiplayerStore((s) => s.ping)
+  const gameState = useGameStore((s) => s.state)
+  const setGameState = useGameStore((s) => s.setState)
 
   // Start spillet når multiplayer-lobby starter
   const effectiveStarted = started || gameStarted
 
+  // Sett riktig GameState ved oppstart
+  useEffect(() => {
+    if (effectiveStarted && introPhase) {
+      setGameState(GameState.INTRO)
+    }
+  }, [effectiveStarted, introPhase, setGameState])
+
+  const handleIntroComplete = useCallback(() => {
+    setIntroPhase(false)
+    setGameState(GameState.PLAYING)
+  }, [setGameState])
+
+  const handleRestart = useCallback(() => {
+    window.location.reload()
+  }, [])
+
+  // ── Ikke startet → Startskjerm / Lobby ──
   if (!effectiveStarted) {
     if (showLobby) {
       return <Lobby onClose={() => setShowLobby(false)} />
@@ -220,66 +283,91 @@ export default function GameApp() {
     )
   }
 
+  // ── Seiersskjerm ──
+  if (gameState === GameState.VICTORY) {
+    return <VictoryScreen onRestart={handleRestart} />
+  }
+
+  // ── Spill (intro + gameplay i samme Canvas) ──
   return (
     <ErrorBoundary>
-      {/* Fang museklikk for kamerakontroll */}
       <Canvas
         shadows
-        camera={{ position: [0, 8, 10], fov: 60, near: 0.1, far: 1000 }}
+        camera={{
+          position: introPhase ? [0, 60, 100] : [0, 8, 10],
+          fov: 60,
+          near: 0.1,
+          far: 1000,
+        }}
         gl={{
           toneMapping: THREE.ACESFilmicToneMapping,
           toneMappingExposure: 1.0,
           antialias: false,
         }}
         dpr={1}
-        style={{ background: '#87CEEB', cursor: 'none' }}
+        style={{
+          background: introPhase ? '#1a1a2e' : '#87CEEB',
+          cursor: introPhase ? 'default' : 'none',
+        }}
       >
-        <Scene cameraYaw={cameraYaw} cameraPitch={cameraPitch} />
+        <Scene
+          cameraYaw={cameraYaw}
+          cameraPitch={cameraPitch}
+          introPhase={introPhase}
+          onIntroComplete={handleIntroComplete}
+        />
       </Canvas>
 
-      <InputSystem />
-      <HUD />
-      <WeaponWheel />
-      <MissionPanel />
-      <Minimap />
-      <DialoguePanel />
-      <PointerLockOverlay />
+      {/* Intro-overlay */}
+      {introPhase && <IntroOverlay />}
 
-      <div style={{
-        position: 'fixed',
-        bottom: 24,
-        right: 24,
-        color: '#aaa',
-        fontSize: 11,
-        fontFamily: 'monospace',
-        pointerEvents: 'none',
-        lineHeight: 1.8,
-        textAlign: 'right',
-      }}>
-        WASD: Beveg &nbsp;|&nbsp; E: NPC / Plukk opp<br />
-        Shift: Sprint &nbsp;|&nbsp; Ctrl: Knele<br />
-        Space: Hopp &nbsp;|&nbsp; F: Kjøretøy<br />
-        G: Skyt &nbsp;|&nbsp; T: Sikt &nbsp;|&nbsp; R: Lad om<br />
-        1-7: Våpen &nbsp;|&nbsp; Q (hold): Våpenhjul
-      </div>
+      {/* Gameplay UI – kun etter intro */}
+      {!introPhase && (
+        <>
+          <InputSystem />
+          <HUD />
+          <WeaponWheel />
+          <MissionPanel />
+          <Minimap />
+          <DialoguePanel />
+          <PointerLockOverlay />
 
-      {/* Multiplayer-info (vises kun når tilkoblet) */}
-      {isConnected && (
-        <div style={{
-          position: 'fixed',
-          top: 12,
-          right: 12,
-          color: '#4ecdc4',
-          fontSize: 11,
-          fontFamily: 'monospace',
-          pointerEvents: 'none',
-          textAlign: 'right',
-          background: 'rgba(0,0,0,0.5)',
-          padding: '6px 10px',
-          borderRadius: 4,
-        }}>
-          ONLINE &bull; {ping}ms
-        </div>
+          <div style={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            color: '#aaa',
+            fontSize: 11,
+            fontFamily: 'monospace',
+            pointerEvents: 'none',
+            lineHeight: 1.8,
+            textAlign: 'right',
+          }}>
+            WASD: Beveg &nbsp;|&nbsp; E: NPC / Plukk opp<br />
+            Shift: Sprint &nbsp;|&nbsp; Ctrl: Knele<br />
+            Space: Hopp &nbsp;|&nbsp; F: Kjøretøy<br />
+            G: Skyt &nbsp;|&nbsp; T: Sikt &nbsp;|&nbsp; R: Lad om<br />
+            1-7: Våpen &nbsp;|&nbsp; Q (hold): Våpenhjul
+          </div>
+
+          {isConnected && (
+            <div style={{
+              position: 'fixed',
+              top: 12,
+              right: 12,
+              color: '#4ecdc4',
+              fontSize: 11,
+              fontFamily: 'monospace',
+              pointerEvents: 'none',
+              textAlign: 'right',
+              background: 'rgba(0,0,0,0.5)',
+              padding: '6px 10px',
+              borderRadius: 4,
+            }}>
+              ONLINE &bull; {ping}ms
+            </div>
+          )}
+        </>
       )}
     </ErrorBoundary>
   )

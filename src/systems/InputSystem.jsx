@@ -19,6 +19,7 @@ export const inputState = {
   reload: false,           // R-tast
   weaponSlot: 0,           // 0 = ingen bytte, 1-7 = velg våpen
   weaponWheel: false,      // Q-tast (hold) – åpner våpenhjul
+  horn: false,             // H-tast: bil-horn
   mouseX: 0,
   mouseY: 0,
   mouseDeltaX: 0,
@@ -38,6 +39,7 @@ const KEY_MAP = {
   KeyE: 'turnCameraRight',
   KeyF: 'enterExit',
   KeyR: 'reload',
+  KeyH: 'horn',
 }
 
 const WEAPON_SLOT_MAP = {

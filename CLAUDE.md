@@ -21,6 +21,25 @@
 - Når brukeren avslutter for dagen
 - Brukeren kan også be om en oppsummering underveis
 
+## Arbeidsmetode – Gjør det selv, ikke deleger
+
+### Ikke spør brukeren om å gjøre ting du kan gjøre selv
+- **Last ned filer selv** med `curl`/`wget` i stedet for å gi brukeren URLer å klikke på
+- **Besøk nettsider selv** med WebFetch/WebSearch i stedet for å be brukeren sjekke noe
+- **Kjør kommandoer selv** — ikke foreslå kommandoer brukeren skal kjøre manuelt
+- **Installer avhengigheter selv** med npm/yarn
+- **Opprett mapper og filer selv** — ikke list opp hva brukeren skal lage
+- Generelt: Hvis du KAN gjøre det med verktøyene dine, GJØR det. Brukeren skal slippe å være din assistent.
+
+### Test grundig — spesielt visuelt
+- Etter endringer: **kjør appen** (`npm run dev`) og **verifiser at den faktisk fungerer**
+- Bruk nettleseren (WebFetch) til å sjekke at sider laster og ikke krasjer
+- Ikke si "dette skal nå fungere" uten å ha testet det
+- Sjekk konsoll for feil etter endringer (kjør dev-server, sjekk output)
+- For visuelle endringer: ta screenshots hvis mulig, eller kjør appen og verifiser at det rendrer riktig
+- Hvis noe er vanskelig å teste automatisk, vær ærlig om det — men prøv alltid først
+- **Ikke merk noe som "ferdig" før det er verifisert** — si heller "implementert, men trenger visuell testing"
+
 ## Prosjektkontekst
 - GTA-lignende 3D zombie-spill satt i Larkollen, Norge
 - Kjører i nettleseren

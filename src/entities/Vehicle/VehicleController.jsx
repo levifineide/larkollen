@@ -1,11 +1,18 @@
-import { useRef } from 'react'
+import { useRef, useMemo, useEffect, forwardRef, useImperativeHandle } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { RigidBody, CuboidCollider, useRapier, interactionGroups } from '@react-three/rapier'
+import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { usePlayerStore } from '../../stores/usePlayerStore'
-import { useVehicleStore, activeVehicleBodyRef } from '../../stores/useVehicleStore'
+import { useVehicleStore, activeVehicleBodyRef, VEHICLE_SMOKE_THRESHOLD, VEHICLE_FLAME_THRESHOLD } from '../../stores/useVehicleStore'
 import { inputState } from '../../systems/InputSystem'
 import { SEA_LEVEL } from '../../world/terrainHeight'
+import { audioManager } from '../../systems/AudioSystem'
+
+// Preload modeller
+useGLTF.preload('/models/car.glb')
+useGLTF.preload('/models/suv.glb')
+useGLTF.preload('/models/police.glb')
 
 // Kollisionsgrupper: spiller (1) og kjøretøy (2) kolliderer ALDRI.
 const VEHICLE_COLLISION_GROUPS = interactionGroups([2], [0, 2])
@@ -13,8 +20,18 @@ const VEHICLE_COLLISION_GROUPS = interactionGroups([2], [0, 2])
 const WATER_Y = SEA_LEVEL
 const ENTER_RADIUS = 4
 
+// Kenney-modeller bounding box: ~1.3×1.1×2.55 (meter).
+// Skaler opp 1.6x for å matche realistisk bilstørrelse (~2.1×1.8×4.1m).
+const MODEL_SCALE = 1.6
+
+// Modell-konfigurasjon per type
+const MODEL_MAP = {
+  car: '/models/car.glb',
+  truck: '/models/suv.glb',    // SUV som lastebil
+  boat: null,                   // Båt bruker fortsatt prosedyrell mesh
+}
+
 // Hjulposisjoner relativt til chassis-senter [x, y, z]
-// Positive Z = front, negative Z = bak
 const CONFIGS = {
   car: {
     maxEngineForce: 600,
@@ -29,14 +46,13 @@ const CONFIGS = {
     wheelRadius: 0.35,
     fuelDrain: 8,
     w: 2.0, h: 0.8, d: 4.2,
-    color: '#e63946', cabColor: '#c1121f',
-    collider: [1.0, 0.4, 2.1],
+    collider: [1.0, 0.55, 2.0],
     density: 1.0,
     wheels: [
-      [-0.85, -0.15, 1.3],   // front-left
-      [0.85, -0.15, 1.3],    // front-right
-      [-0.85, -0.15, -1.3],  // rear-left
-      [0.85, -0.15, -1.3],   // rear-right
+      [-0.85, -0.35, 1.3],   // front-left
+      [0.85, -0.35, 1.3],    // front-right
+      [-0.85, -0.35, -1.3],  // rear-left
+      [0.85, -0.35, -1.3],   // rear-right
     ],
     steerWheels: [0, 1],
     driveWheels: [2, 3],
@@ -54,14 +70,13 @@ const CONFIGS = {
     wheelRadius: 0.45,
     fuelDrain: 10,
     w: 2.4, h: 1.0, d: 5.2,
-    color: '#457b9d', cabColor: '#1d3557',
-    collider: [1.2, 0.5, 2.6],
+    collider: [1.2, 0.6, 2.6],
     density: 1.2,
     wheels: [
-      [-1.0, -0.15, 1.6],
-      [1.0, -0.15, 1.6],
-      [-1.0, -0.15, -1.6],
-      [1.0, -0.15, -1.6],
+      [-1.0, -0.35, 1.6],
+      [1.0, -0.35, 1.6],
+      [-1.0, -0.35, -1.6],
+      [1.0, -0.35, -1.6],
     ],
     steerWheels: [0, 1],
     driveWheels: [2, 3],
@@ -72,7 +87,6 @@ const CONFIGS = {
     steerPower: 0.5,
     fuelDrain: 5,
     w: 2.0, h: 0.6, d: 5.0,
-    color: '#2a9d8f', cabColor: null,
     collider: [1.0, 0.3, 2.5],
     density: 0.5,
   },
@@ -83,40 +97,54 @@ const AXLE_DIR = { x: -1, y: 0, z: 0 }
 
 export default function VehicleController({ id, type, startPos }) {
   const bodyRef = useRef(null)
-  const vehicleRef = useRef(null)    // Rapier DynamicRayCastVehicleController
+  const vehicleRef = useRef(null)
   const prevEnterExit = useRef(false)
   const fuelRef = useRef(100)
   const smoothSteerRef = useRef(0)
   const healthRef = useRef(100)
   const lastCollisionSpeed = useRef(0)
-  const damageColorRef = useRef(null)
   const explosionDone = useRef(false)
+  const wheelSpinAngle = useRef(0)
+  const wheelNodesRef = useRef(null)
+  const meshGroupRef = useRef(null)
+  const smokeParticlesRef = useRef(null)
+  const lastCrashSoundTime = useRef(0)
 
   const { world, rapier } = useRapier()
   const cfg = CONFIGS[type]
   const isBoat = type === 'boat'
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     const rb = bodyRef.current
     if (!rb) return
 
-    // Sjekk om kjøretøyet er eksplodert
     if (explosionDone.current) return
 
     const pos = rb.translation()
 
-    // ── Kollisjonsskade – sjekk horisontalt fart-endring ──────────────
+    // -- Kollisjonsskade --
     const vel = rb.linvel()
-    // Ignorer vertikal hastighet (Y) – kun horisontal kollisjon teller
     const hSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z)
     const hSpeedDelta = Math.abs(lastCollisionSpeed.current - hSpeed)
     lastCollisionSpeed.current = hSpeed
 
-    // Stor horisontal fart-endring = kollisjon (terskel 12 for å unngå falsk utløsning)
-    if (hSpeedDelta > 12) {
-      const dmg = (hSpeedDelta - 12) * 2
+    if (hSpeedDelta > 8) {
+      const dmg = (hSpeedDelta - 8) * 2.5
       healthRef.current = Math.max(0, healthRef.current - dmg)
       useVehicleStore.getState().setHealth(id, healthRef.current)
+
+      // Krasj-lyd
+      const now = state.clock.elapsedTime
+      if (now - lastCrashSoundTime.current > 0.5) {
+        lastCrashSoundTime.current = now
+        audioManager.play('car_crash')
+        if (hSpeedDelta > 15) audioManager.play('car_window_break')
+      }
+
+      // Spawn debris ved hard krasj
+      if (hSpeedDelta > 15 && smokeParticlesRef.current) {
+        smokeParticlesRef.current.spawnBurst(6)
+      }
 
       if (healthRef.current <= 0 && !explosionDone.current) {
         triggerExplosion(rb, id, pos)
@@ -125,17 +153,14 @@ export default function VehicleController({ id, type, startPos }) {
       }
     }
 
-    // ── Båt: ingen gravitasjon, klem til vannflaten ─────────────────────
+    // -- Båt: ingen gravitasjon, klem til vannflaten --
     if (isBoat) {
       rb.setGravityScale(0, true)
-      // Hold båten på vannoverflaten – null ut vertikal hastighet og korriger posisjon
-      const vel = rb.linvel()
-      rb.setLinvel({ x: vel.x, y: 0, z: vel.z }, true)
+      const bvel = rb.linvel()
+      rb.setLinvel({ x: bvel.x, y: 0, z: bvel.z }, true)
       if (Math.abs(pos.y - (WATER_Y - 0.15)) > 0.02) {
         rb.setTranslation({ x: pos.x, y: WATER_Y - 0.15, z: pos.z }, true)
       }
-
-      // Stopp all bevegelse når ingen kjører
       const activeId0 = useVehicleStore.getState().activeId
       if (activeId0 !== id) {
         rb.setLinvel({ x: 0, y: 0, z: 0 }, true)
@@ -143,7 +168,7 @@ export default function VehicleController({ id, type, startPos }) {
       }
     }
 
-    // ── Lazy init: Rapier RaycastVehicleController (bil/lastebil) ──────
+    // -- Lazy init: Rapier RaycastVehicleController (bil/lastebil) --
     if (!isBoat && !vehicleRef.current) {
       const vc = new rapier.DynamicRayCastVehicleController(
         rb, world.bodies, world.colliders, world.queryPipeline
@@ -165,7 +190,30 @@ export default function VehicleController({ id, type, startPos }) {
       vehicleRef.current = vc
     }
 
-    // ── Enter / exit ────────────────────────────────────────────────────
+    // -- Hjulanimasjon (visuell rotasjon basert på fart) --
+    if (!isBoat && wheelNodesRef.current) {
+      const speed = hSpeed
+      const direction = (inputState.backward && !inputState.forward) ? -1 : 1
+      wheelSpinAngle.current += speed * delta * 3.0 * direction
+      const steerAngle = smoothSteerRef.current * (cfg.maxSteerAngle || 0.3)
+
+      for (const wn of wheelNodesRef.current) {
+        if (!wn.node) continue
+        // Spin-rotasjon (X-aksen for rulling)
+        wn.node.rotation.x = wheelSpinAngle.current
+        // Styring for forhjul (Y-aksen)
+        if (wn.isFront) {
+          wn.node.rotation.y = steerAngle
+        }
+      }
+    }
+
+    // -- Skadevisualisering: røyk og flammefargetint --
+    if (smokeParticlesRef.current) {
+      smokeParticlesRef.current.update(delta, healthRef.current, pos)
+    }
+
+    // -- Enter / exit --
     const enterNow = inputState.enterExit
     const justPressed = enterNow && !prevEnterExit.current
     prevEnterExit.current = enterNow
@@ -185,6 +233,8 @@ export default function VehicleController({ id, type, startPos }) {
           pos.y + 1.5,
           pos.z + Math.cos(yaw + Math.PI / 2) * 3.5,
         ])
+        // Stopp motorlyd
+        audioManager.stopEngine()
       } else if (activeId === null) {
         // Gå inn
         const pp = usePlayerStore.getState().position
@@ -194,20 +244,20 @@ export default function VehicleController({ id, type, startPos }) {
           useVehicleStore.getState().setActive(id)
           activeVehicleBodyRef.current = rb
           usePlayerStore.getState().setDriving(id)
+          // Start motorlyd
+          audioManager.startEngine()
         }
       }
     }
 
     if (activeId !== id) return
 
-    // ── Drivstoff ────────────────────────────────────────────────────────
+    // -- Drivstoff --
     const throttle = inputState.forward ? 1 : inputState.backward ? -0.5 : 0
     const steerTarget = inputState.left ? 1 : inputState.right ? -1 : 0
     if (steerTarget === 0) {
-      // Øyeblikkelig retur til sentrum
       smoothSteerRef.current = 0
     } else {
-      // Gradvis påføring av styring
       smoothSteerRef.current += (steerTarget - smoothSteerRef.current) * Math.min(1, 6 * delta)
     }
     const steer = smoothSteerRef.current
@@ -217,7 +267,29 @@ export default function VehicleController({ id, type, startPos }) {
       useVehicleStore.getState().setFuel(id, fuelRef.current)
     }
 
-    // ── Kjøretøy-oppdatering ─────────────────────────────────────────────
+    // Motor pitch basert på fart
+    const speedRatio = Math.min(1, hSpeed / 20)
+    audioManager.setEngineRate(0.6 + speedRatio * 1.2)
+
+    // Dekk-skrik ved hard sving i fart
+    if (Math.abs(steer) > 0.7 && hSpeed > 8) {
+      if (!window.__tireScreechPlaying) {
+        window.__tireScreechPlaying = true
+        audioManager.play('tire_screech')
+        setTimeout(() => { window.__tireScreechPlaying = false }, 800)
+      }
+    }
+
+    // Horn (H-tast)
+    if (inputState.horn) {
+      if (!window.__hornPlaying) {
+        window.__hornPlaying = true
+        audioManager.play('car_horn')
+        setTimeout(() => { window.__hornPlaying = false }, 500)
+      }
+    }
+
+    // -- Kjøretøy-oppdatering --
     if (isBoat) {
       updateBoat(rb, throttle, steer, cfg, fuelRef.current, delta)
     } else {
@@ -232,9 +304,9 @@ export default function VehicleController({ id, type, startPos }) {
       ref={bodyRef}
       type="dynamic"
       position={startPos}
-      linearDamping={isBoat ? 1.5 : 0}
-      angularDamping={isBoat ? 4 : 5}
-      enabledRotations={[false, true, false]}
+      linearDamping={isBoat ? 1.5 : 0.1}
+      angularDamping={isBoat ? 4 : 3}
+      enabledRotations={isBoat ? [false, true, false] : [true, true, true]}
       colliders={false}
     >
       <CuboidCollider
@@ -242,24 +314,210 @@ export default function VehicleController({ id, type, startPos }) {
         density={cfg.density}
         collisionGroups={VEHICLE_COLLISION_GROUPS}
       />
-      <VehicleMesh type={type} cfg={cfg} />
+      <group ref={meshGroupRef}>
+        {MODEL_MAP[type] ? (
+          <VehicleGLBMesh
+            type={type}
+            modelPath={MODEL_MAP[type]}
+            wheelNodesRef={wheelNodesRef}
+            healthRef={healthRef}
+          />
+        ) : (
+          <BoatMesh cfg={cfg} />
+        )}
+        {!isBoat && <SmokeAndFire ref={smokeParticlesRef} />}
+      </group>
     </RigidBody>
   )
 }
 
-// ── Rapier RaycastVehicle – bil/lastebil ────────────────────────────────────
+// -- GLB-basert bilmesh med hjulreferanser --
+
+function VehicleGLBMesh({ type, modelPath, wheelNodesRef, healthRef }) {
+  const { scene } = useGLTF(modelPath)
+  const clonedScene = useMemo(() => {
+    const clone = scene.clone(true)
+    // Aktiver skygger
+    clone.traverse(child => {
+      if (child.isMesh) {
+        child.castShadow = true
+        child.receiveShadow = true
+        // Klon materialet slik at skadetint ikke påvirker andre instanser
+        if (child.material) {
+          child.material = child.material.clone()
+        }
+      }
+    })
+    return clone
+  }, [scene])
+
+  // Finn hjulnoder
+  useEffect(() => {
+    const wheels = []
+    const wheelNames = {
+      'wheel-front-left': true,
+      'wheel-front-right': true,
+      'wheel-back-left': false,
+      'wheel-back-right': false,
+    }
+    clonedScene.traverse(child => {
+      const name = child.name?.toLowerCase().replace(/_/g, '-')
+      if (!name) return
+      for (const [pattern, isFront] of Object.entries(wheelNames)) {
+        if (name.includes(pattern) || name.includes(pattern.replace(/-/g, ''))) {
+          wheels.push({ node: child, isFront })
+        }
+      }
+    })
+    wheelNodesRef.current = wheels
+  }, [clonedScene, wheelNodesRef])
+
+  // Skadetint per frame
+  useFrame(() => {
+    const health = healthRef.current
+    const damageFactor = 1 - health / 100
+    clonedScene.traverse(child => {
+      if (child.isMesh && child.material) {
+        // Mørkne og rødtint ved skade
+        const baseColor = child.material.userData.originalColor
+        if (!baseColor) {
+          child.material.userData.originalColor = child.material.color.clone()
+        }
+        if (child.material.userData.originalColor) {
+          const oc = child.material.userData.originalColor
+          child.material.color.setRGB(
+            oc.r * (1 - damageFactor * 0.5) + damageFactor * 0.3,
+            oc.g * (1 - damageFactor * 0.7),
+            oc.b * (1 - damageFactor * 0.7),
+          )
+        }
+      }
+    })
+  })
+
+  return (
+    <primitive
+      object={clonedScene}
+      scale={[MODEL_SCALE, MODEL_SCALE, MODEL_SCALE]}
+      position={[0, -0.45, 0]}
+      rotation={[0, Math.PI, 0]}
+    />
+  )
+}
+
+// -- Røyk og flamme-partikler --
+
+const SmokeAndFire = forwardRef(function SmokeAndFire(_, ref) {
+  const MAX_PARTICLES = 30
+  const meshRef = useRef()
+  const particlesRef = useRef([])
+  const dummy = useMemo(() => new THREE.Object3D(), [])
+  const colorRef = useRef(new THREE.Color())
+
+  useImperativeHandle(ref, () => ({
+    update(delta, health, vehiclePos) {
+      const particles = particlesRef.current
+      const mesh = meshRef.current
+      if (!mesh) return
+
+      // Spawn røyk når helse er lav
+      if (health < VEHICLE_SMOKE_THRESHOLD && Math.random() < 0.3) {
+        spawnParticle(vehiclePos, health < VEHICLE_FLAME_THRESHOLD ? 'fire' : 'smoke')
+      }
+
+      // Oppdater eksisterende partikler
+      let activeCount = 0
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i]
+        if (!p.alive) continue
+        p.age += delta
+        if (p.age > p.lifetime) {
+          p.alive = false
+          continue
+        }
+        const t = p.age / p.lifetime
+        p.y += p.vy * delta
+        p.x += (Math.random() - 0.5) * 0.5 * delta
+        p.z += (Math.random() - 0.5) * 0.5 * delta
+        p.vy += 1.5 * delta // stigende
+
+        const scale = p.size * (1 + t * 2) * (1 - t * 0.3)
+        dummy.position.set(p.x, p.y, p.z)
+        dummy.scale.setScalar(scale)
+        dummy.updateMatrix()
+        mesh.setMatrixAt(activeCount, dummy.matrix)
+
+        // Farge: røyk=grå, ild=oransje→rød
+        if (p.type === 'fire') {
+          colorRef.current.setRGB(1.0 - t * 0.5, 0.4 * (1 - t), 0)
+        } else {
+          const g = 0.3 + t * 0.3
+          colorRef.current.setRGB(g, g, g)
+        }
+        mesh.setColorAt(activeCount, colorRef.current)
+        activeCount++
+      }
+
+      // Skjul ubrukte instanser
+      for (let i = activeCount; i < MAX_PARTICLES; i++) {
+        dummy.position.set(0, -100, 0)
+        dummy.scale.setScalar(0)
+        dummy.updateMatrix()
+        mesh.setMatrixAt(i, dummy.matrix)
+      }
+      mesh.instanceMatrix.needsUpdate = true
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+      mesh.count = activeCount
+    },
+
+    spawnBurst(count) {
+      for (let i = 0; i < count; i++) {
+        spawnParticle(
+          { x: (Math.random() - 0.5) * 2, y: 0.5, z: (Math.random() - 0.5) * 2 },
+          Math.random() > 0.5 ? 'fire' : 'debris'
+        )
+      }
+    },
+  }))
+
+  function spawnParticle(pos, type) {
+    const particles = particlesRef.current
+    let p = particles.find(p => !p.alive)
+    if (!p) {
+      if (particles.length >= MAX_PARTICLES) return
+      p = { alive: false }
+      particles.push(p)
+    }
+    p.alive = true
+    p.age = 0
+    p.lifetime = type === 'fire' ? 0.4 + Math.random() * 0.4 : 1.0 + Math.random() * 1.5
+    p.x = (pos.x || 0) + (Math.random() - 0.5) * 0.8
+    p.y = (pos.y || 0.8) + Math.random() * 0.3
+    p.z = (pos.z || 0) + (Math.random() - 0.5) * 0.8
+    p.vy = 0.5 + Math.random() * 1.0
+    p.size = type === 'fire' ? 0.1 + Math.random() * 0.15 : 0.15 + Math.random() * 0.2
+    p.type = type
+  }
+
+  return (
+    <instancedMesh ref={meshRef} args={[undefined, undefined, MAX_PARTICLES]} frustumCulled={false}>
+      <sphereGeometry args={[0.5, 6, 6]} />
+      <meshBasicMaterial transparent opacity={0.6} depthWrite={false} />
+    </instancedMesh>
+  )
+})
+
+// -- Rapier RaycastVehicle - bil/lastebil --
 
 function updateWheeledVehicle(vc, rb, throttle, steer, cfg, fuel, world) {
   if (!vc) return
 
   const hasFuel = fuel > 0
 
-  // Motorkraft på drivhjul
   for (const wi of cfg.driveWheels) {
     vc.setWheelEngineForce(wi, hasFuel ? throttle * cfg.maxEngineForce : 0)
   }
 
-  // Styring på forhjul – reduser ved høy fart for å unngå spinn
   const vel = rb.linvel()
   const speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z)
   const speedFactor = Math.max(0.25, 1.0 - speed / 25)
@@ -267,7 +525,6 @@ function updateWheeledVehicle(vc, rb, throttle, steer, cfg, fuel, world) {
     vc.setWheelSteering(wi, steer * cfg.maxSteerAngle * speedFactor)
   }
 
-  // Brems: automatisk lett brems når ingen gass
   const brakeForce = Math.abs(throttle) < 0.05 ? cfg.maxBrakeForce * 0.3 : 0
   for (let i = 0; i < cfg.wheels.length; i++) {
     vc.setWheelBrake(i, brakeForce)
@@ -275,14 +532,13 @@ function updateWheeledVehicle(vc, rb, throttle, steer, cfg, fuel, world) {
 
   vc.updateVehicle(world.timestep)
 
-  // Aktiv rotasjonsdemping ETTER vehicle update – stopp spinn når ingen styring
   if (Math.abs(steer) < 0.01) {
     const angvel = rb.angvel()
     rb.setAngvel({ x: angvel.x, y: angvel.y * 0.8, z: angvel.z }, true)
   }
 }
 
-// ── Enkel kraft-fysikk – båt ────────────────────────────────────────────────
+// -- Enkel kraft-fysikk - bat --
 
 const _fwd = new THREE.Vector3()
 const _euler = new THREE.Euler(0, 0, 0, 'YXZ')
@@ -309,14 +565,16 @@ function updateBoat(rb, throttle, steer, cfg, fuel, delta) {
   }
 }
 
-// ── Eksplosjon ──────────────────────────────────────────────────────────────
+// -- Eksplosjon --
 
 function triggerExplosion(rb, id, pos) {
-  // Stopp kjøretøyet
   rb.setLinvel({ x: 0, y: 8, z: 0 }, true)
-  rb.setAngvel({ x: (Math.random() - 0.5) * 5, y: (Math.random() - 0.5) * 5, z: (Math.random() - 0.5) * 5 }, true)
+  rb.setAngvel({
+    x: (Math.random() - 0.5) * 5,
+    y: (Math.random() - 0.5) * 5,
+    z: (Math.random() - 0.5) * 5,
+  }, true)
 
-  // Kast spilleren ut hvis de sitter i
   const activeId = useVehicleStore.getState().activeId
   if (activeId === id) {
     useVehicleStore.getState().clearActive()
@@ -324,16 +582,16 @@ function triggerExplosion(rb, id, pos) {
     usePlayerStore.getState().setDriving(null)
     usePlayerStore.getState().setPendingTeleport([pos.x + 4, pos.y + 2, pos.z + 4])
     usePlayerStore.getState().takeDamage(30)
+    audioManager.stopEngine()
   }
 
+  audioManager.play('explosion')
+  audioManager.play('car_crash')
   useVehicleStore.getState().setExploded(id)
-
-  // Screen shake via global event
   window.__screenShake = 1.0
 }
 
-// ── Radialkraft fra eksplosjon (brukes av granater og kjøretøy) ────────────
-// zombiePool importeres dynamisk for å unngå sirkulær import
+// -- Radialkraft fra eksplosjon --
 export function applyRadialForce(center, radius, forceDamage, zombiePoolRef) {
   if (!zombiePoolRef) return
   for (const [, entity] of zombiePoolRef) {
@@ -349,45 +607,15 @@ export function applyRadialForce(center, radius, forceDamage, zombiePoolRef) {
   }
 }
 
-// ── Visuelle komponenter ────────────────────────────────────────────────────
+// -- Bat-mesh (prosedyrell, uendret) --
 
-function VehicleMesh({ type, cfg }) {
+function BoatMesh({ cfg }) {
   return (
     <group>
       <mesh castShadow receiveShadow>
         <boxGeometry args={[cfg.w, cfg.h, cfg.d]} />
-        <meshStandardMaterial color={cfg.color} />
+        <meshStandardMaterial color="#2a9d8f" />
       </mesh>
-      {cfg.cabColor && (
-        <mesh castShadow position={[0, cfg.h * 0.88, cfg.d * 0.05]}>
-          <boxGeometry args={[cfg.w * 0.82, cfg.h * 0.72, cfg.d * 0.46]} />
-          <meshStandardMaterial color={cfg.cabColor} />
-        </mesh>
-      )}
-      {type !== 'boat' && <Wheels cfg={cfg} />}
-      {type === 'boat' && <BoatDetails cfg={cfg} />}
-    </group>
-  )
-}
-
-function Wheels({ cfg }) {
-  const r = cfg.wheelRadius
-  const w = 0.28
-  return (
-    <>
-      {cfg.wheels.map((p, i) => (
-        <mesh key={i} position={p} rotation={[0, 0, Math.PI / 2]} castShadow>
-          <cylinderGeometry args={[r, r, w, 12]} />
-          <meshStandardMaterial color="#111" />
-        </mesh>
-      ))}
-    </>
-  )
-}
-
-function BoatDetails({ cfg }) {
-  return (
-    <>
       <mesh position={[0, cfg.h * 0.52, 0]}>
         <boxGeometry args={[cfg.w + 0.1, 0.08, cfg.d]} />
         <meshStandardMaterial color="#5c4033" />
@@ -396,6 +624,6 @@ function BoatDetails({ cfg }) {
         <cylinderGeometry args={[0.06, 0.06, 2.5, 6]} />
         <meshStandardMaterial color="#8B4513" />
       </mesh>
-    </>
+    </group>
   )
 }

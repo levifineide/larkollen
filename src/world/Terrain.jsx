@@ -2,7 +2,7 @@ import { useMemo, useEffect, useRef } from 'react'
 import { useGLTF } from '@react-three/drei'
 import { RigidBody, CuboidCollider } from '@react-three/rapier'
 import * as THREE from 'three'
-import { getTerrainHeight, setTerrainMesh, SEA_THRESHOLD, SEA_FLOOR, isWaterZone } from './terrainHeight'
+import { getTerrainHeight, setTerrainMesh } from './terrainHeight'
 
 /**
  * Terreng-komponent.
@@ -11,8 +11,8 @@ import { getTerrainHeight, setTerrainMesh, SEA_THRESHOLD, SEA_FLOOR, isWaterZone
  */
 
 function createTerrainGeometry(resolution) {
-  const SIZE_X = 4400
-  const SIZE_Z = 6700
+  const SIZE_X = 4550
+  const SIZE_Z = 6680
   const geo = new THREE.PlaneGeometry(SIZE_X, SIZE_Z, resolution - 1, resolution - 1)
   // Pre-roter til XZ-planet slik at vertices er i world-space
   geo.rotateX(-Math.PI / 2)
@@ -47,7 +47,7 @@ function ProceduralTerrain() {
       </RigidBody>
 
       <RigidBody type="fixed">
-        <CuboidCollider args={[2200, 0.5, 3350]} position={[0, -5, 0]} />
+        <CuboidCollider args={[2275, 0.5, 3340]} position={[0, -5, 0]} />
       </RigidBody>
     </group>
   )
@@ -65,34 +65,11 @@ function GLBTerrain() {
           child.material.roughness = 0.92
           child.material.metalness = 0.0
         }
-        // Senk vannområde-vertices under vannflaten
-        const geo = child.geometry
-        if (geo) {
-          child.updateWorldMatrix(true, false)
-          const pos = geo.attributes.position
-          if (pos) {
-            const _v = new THREE.Vector3()
-            let modified = false
-            for (let i = 0; i < pos.count; i++) {
-              _v.set(pos.getX(i), pos.getY(i), pos.getZ(i))
-              _v.applyMatrix4(child.matrixWorld)
-              // Senk vertex hvis det er i et kjent vannområde ELLER under sjønivå
-              if (_v.y < SEA_THRESHOLD || isWaterZone(_v.x, _v.z)) {
-                pos.setY(i, SEA_FLOOR)
-                modified = true
-              }
-            }
-            if (modified) {
-              pos.needsUpdate = true
-              geo.computeVertexNormals()
-            }
-          }
-        }
       }
     })
   }, [scene])
 
-  // Registrer terreng-mesh for heightmap-cache (ETTER vertex-modifikasjon)
+  // Registrer terreng-mesh for heightmap-cache (vannområder er bakt inn i GLB)
   useEffect(() => {
     setTerrainMesh(scene)
     return () => setTerrainMesh(null)
@@ -102,7 +79,7 @@ function GLBTerrain() {
     <group ref={groupRef}>
       <primitive object={scene} />
       <RigidBody type="fixed">
-        <CuboidCollider args={[2200, 0.5, 3350]} position={[0, -5, 0]} />
+        <CuboidCollider args={[2275, 0.5, 3340]} position={[0, -5, 0]} />
       </RigidBody>
     </group>
   )

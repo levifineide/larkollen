@@ -14,17 +14,27 @@ export const SEA_FLOOR = -4.0       // havbunn-Y (godt under vannflaten)
 // ─── Kjente vannområder (game-koordinater) ────────────────────────
 // Definert basert på kartdata – brukes for å tvinge terreng under vann
 
-/** Sjekk om et punkt i game-verden er i et kjent vannområde */
+/** Sjekk om et punkt i game-verden er i et vannområde.
+ *  Bruker heightmap-cachen fra GLB-terrenget: vannområder er bakt inn som SEA_FLOOR.
+ *  Fallback til hardkodede soner når heightmap ikke er lastet.
+ */
 export function isWaterZone(gameX, gameZ) {
-  // Havn/bukt-sone (rundt båtbrygga)
-  const bayDx = Math.abs(gameX)
-  const bayDz = Math.abs(gameZ + 165)
-  if (bayDx < 100 && bayDz < 95) return true
+  // Bruk heightmap-cache når tilgjengelig (vannområder er bakt inn i GLB)
+  if (_heightmap) {
+    const fx = (gameX - _hmMinX) / _hmCellW
+    const fz = (gameZ - _hmMinZ) / _hmCellH
+    const ix = Math.round(fx)
+    const iz = Math.round(fz)
+    if (ix >= 0 && ix < _hmResX && iz >= 0 && iz < _hmResZ) {
+      return _heightmap[iz * _hmResX + ix] < SEA_THRESHOLD
+    }
+  }
 
-  // Kystlinje sør og øst (åpent hav)
-  // I game-koordinater: positiv Z = sør, positiv X = øst
-  // (build-map: Z = -northing, så sør = positiv Z)
-  if (gameZ < -1500 || gameX > 1500) return true
+  // Hardkodet fallback (prosedyrell modus)
+  if (gameX < -500) return true
+  if (gameZ > 2500) return true
+  if (gameZ < -3000) return true
+  if (gameX < -200 && gameZ > -500 && gameZ < 500) return true
 
   return false
 }

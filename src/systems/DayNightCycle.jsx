@@ -165,19 +165,21 @@ export default function DayNightCycle() {
         mieDirectionalG={0.8}
       />
 
-      <ambientLight ref={ambientRef} intensity={0.5} />
+      <ambientLight ref={ambientRef} intensity={0.7} />
 
       <directionalLight
         ref={dirLightRef}
         position={[50, 80, 30]}
         intensity={1.8}
         castShadow
-        shadow-mapSize={[256, 256]}
-        shadow-camera-far={60}
-        shadow-camera-left={-20}
-        shadow-camera-right={20}
-        shadow-camera-top={20}
-        shadow-camera-bottom={-20}
+        shadow-mapSize={[1024, 1024]}
+        shadow-bias={-0.002}
+        shadow-normalBias={0.05}
+        shadow-camera-far={200}
+        shadow-camera-left={-80}
+        shadow-camera-right={80}
+        shadow-camera-top={80}
+        shadow-camera-bottom={-80}
       />
 
       {/* Lyn-lys – kraftig punktlys som blinker ved storm */}

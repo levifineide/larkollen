@@ -22,4 +22,20 @@ export default defineConfig({
       'Cross-Origin-Embedder-Policy': 'require-corp',
     },
   },
+  build: {
+    target: 'esnext',
+    minify: 'esbuild',
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          three: ['three'],
+          r3f: ['@react-three/fiber', '@react-three/drei', '@react-three/rapier'],
+          vendor: ['react', 'react-dom', 'zustand'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 1500,
+    assetsInlineLimit: 4096,
+  },
 })

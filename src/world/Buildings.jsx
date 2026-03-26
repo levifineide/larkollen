@@ -1,5 +1,5 @@
-import { useRef, useMemo, useEffect, useState } from 'react'
-import { useFrame, useThree } from '@react-three/fiber'
+import { useRef, useMemo, useState } from 'react'
+import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import { RigidBody, CuboidCollider } from '@react-three/rapier'
 import * as THREE from 'three'
@@ -75,112 +75,178 @@ function createProceduralTexture(width, height, drawFn) {
   const tex = new THREE.CanvasTexture(canvas)
   tex.wrapS = THREE.RepeatWrapping
   tex.wrapT = THREE.RepeatWrapping
+  tex.flipY = true  // Default: canvas top-left → GPU bottom-left (correct for glTF UVs)
   tex.colorSpace = THREE.SRGBColorSpace
+  tex.needsUpdate = true
   return tex
 }
 
-/** Lag teksturer for norske bygninger */
+/** Lag teksturer for norske bygninger – med vinduer og dører */
 function createBuildingTextures() {
-  // ── Trevegg (hvit/gul/rød) – liggende kledning med synlige bord ──
-  function drawWoodCladding(ctx, w, h, baseColor, boardColor) {
+  // ── Tegn vinduer på en vegg-tekstur ──
+  function drawWindows(ctx, w, h, windowColor = '#8cb4d8', frameColor = '#f0ece8') {
+    // Teksturen representerer én veggflate med 3 vinduer over, 2 vinduer + 1 dør under
+    const cols = 3
+    const rows = 2
+    const marginX = w * 0.08
+    const marginTop = h * 0.1
+    const marginBottom = h * 0.06
+    const cellW = (w - marginX * 2) / cols
+    const cellH = (h - marginTop - marginBottom) / rows
+    const winW = cellW * 0.5
+    const winH = cellH * 0.55
+    const gap = 3 // ramme-bredde
+
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const cx = marginX + col * cellW + cellW / 2
+        const cy = marginTop + row * cellH + cellH / 2
+
+        // Dør i midten nederst
+        if (row === rows - 1 && col === 1) {
+          const doorW = winW * 0.85
+          const doorH = cellH * 0.85
+          const dx = cx - doorW / 2
+          const dy = cy - doorH / 2 + doorH * 0.08
+          // Dørkarm
+          ctx.fillStyle = frameColor
+          ctx.fillRect(dx - gap, dy - gap, doorW + gap * 2, doorH + gap * 2)
+          // Dør
+          ctx.fillStyle = '#5a4030'
+          ctx.fillRect(dx, dy, doorW, doorH)
+          // Dørhåndtak
+          ctx.fillStyle = '#c0b080'
+          ctx.fillRect(dx + doorW * 0.75, dy + doorH * 0.55, 3, 6)
+          continue
+        }
+
+        const wx = cx - winW / 2
+        const wy = cy - winH / 2
+
+        // Vindusramme (hvit)
+        ctx.fillStyle = frameColor
+        ctx.fillRect(wx - gap, wy - gap, winW + gap * 2, winH + gap * 2)
+
+        // Vindusglass
+        ctx.fillStyle = windowColor
+        ctx.fillRect(wx, wy, winW, winH)
+
+        // Vinduskryss (sprosse)
+        ctx.fillStyle = frameColor
+        ctx.fillRect(wx + winW / 2 - 1, wy, 2, winH) // vertikal
+        ctx.fillRect(wx, wy + winH / 2 - 1, winW, 2) // horisontal
+
+        // Glass-refleksjon
+        ctx.globalAlpha = 0.15
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(wx + 2, wy + 2, winW * 0.35, winH * 0.4)
+        ctx.globalAlpha = 1.0
+      }
+    }
+  }
+
+  // ── Trevegg (hvit/gul/rød) – liggende kledning med synlige bord + vinduer ──
+  function drawWoodCladdingWithWindows(ctx, w, h, baseColor, boardColor, windowTint) {
+    // Bakgrunn
     ctx.fillStyle = baseColor
     ctx.fillRect(0, 0, w, h)
 
-    const boardHeight = h / 12 // ~12 bord per tekstur-tile
+    // Liggende kledning
+    const boardHeight = h / 14
     ctx.strokeStyle = boardColor
     ctx.lineWidth = 1
 
     for (let y = 0; y < h; y += boardHeight) {
-      // Brettfuge
       ctx.beginPath()
       ctx.moveTo(0, y)
       ctx.lineTo(w, y)
       ctx.stroke()
 
-      // Subtil variasjon i hver planke
-      const shade = 0.97 + Math.random() * 0.06
-      ctx.fillStyle = baseColor
-      ctx.globalAlpha = 1.0 - shade + 0.5
+      // Variasjon per planke
+      ctx.globalAlpha = 0.04 + Math.random() * 0.04
+      ctx.fillStyle = Math.random() > 0.5 ? '#000000' : '#ffffff'
       ctx.fillRect(0, y + 1, w, boardHeight - 1)
       ctx.globalAlpha = 1.0
     }
 
-    // Subtil korneffekt
-    ctx.globalAlpha = 0.03
-    for (let i = 0; i < 500; i++) {
-      const gx = Math.random() * w
-      const gy = Math.random() * h
-      ctx.fillStyle = Math.random() > 0.5 ? '#000' : '#fff'
-      ctx.fillRect(gx, gy, 1, 1)
-    }
-    ctx.globalAlpha = 1.0
+    // Vinduer og dør
+    drawWindows(ctx, w, h, windowTint || '#8cb4d8')
   }
 
   const wallWhiteTex = createProceduralTexture(256, 256, (ctx, w, h) =>
-    drawWoodCladding(ctx, w, h, '#e8e4de', '#d0ccc4'))
+    drawWoodCladdingWithWindows(ctx, w, h, '#f0ece6', '#ddd8d0', '#9ec4e0'))
 
   const wallYellowTex = createProceduralTexture(256, 256, (ctx, w, h) =>
-    drawWoodCladding(ctx, w, h, '#ddd090', '#c4b870'))
+    drawWoodCladdingWithWindows(ctx, w, h, '#e8d88c', '#d0c070', '#8cb4d0'))
 
   const wallRedTex = createProceduralTexture(256, 256, (ctx, w, h) =>
-    drawWoodCladding(ctx, w, h, '#8c3028', '#702420'))
+    drawWoodCladdingWithWindows(ctx, w, h, '#a83830', '#882820', '#6090b0'))
 
   const wallDarkwoodTex = createProceduralTexture(256, 256, (ctx, w, h) =>
-    drawWoodCladding(ctx, w, h, '#5a4030', '#483020'))
+    drawWoodCladdingWithWindows(ctx, w, h, '#6a5040', '#584030', '#5080a0'))
 
-  // Grå vegg (mur/betong)
+  // Grå vegg (mur/betong) med vinduer
   const wallGreyTex = createProceduralTexture(256, 256, (ctx, w, h) => {
-    ctx.fillStyle = '#a8a4a0'
+    ctx.fillStyle = '#b8b4b0'
     ctx.fillRect(0, 0, w, h)
     // Murstein-mønster
     const brickH = h / 16
     const brickW = w / 8
-    ctx.strokeStyle = '#989490'
+    ctx.strokeStyle = '#a09890'
     ctx.lineWidth = 1
     for (let row = 0; row < 16; row++) {
       const offsetX = row % 2 === 0 ? 0 : brickW / 2
       for (let col = -1; col < 9; col++) {
-        ctx.strokeRect(offsetX + col * brickW, row * brickH, brickW, brickH)
+        const shade = 0.96 + Math.random() * 0.08
+        ctx.fillStyle = `rgba(160, 156, 150, ${1 - shade + 0.5})`
+        const x = offsetX + col * brickW
+        const y = row * brickH
+        ctx.fillRect(x + 1, y + 1, brickW - 2, brickH - 2)
+        ctx.strokeRect(x, y, brickW, brickH)
       }
     }
+    // Vinduer
+    drawWindows(ctx, w, h, '#7aa8c8', '#d0ccc8')
   })
 
-  // Takstein – mørk
+  // ── Takstein – mørk (litt lysere for bedre synlighet) ──
   const roofDarkTex = createProceduralTexture(256, 256, (ctx, w, h) => {
-    ctx.fillStyle = '#3a3840'
+    ctx.fillStyle = '#505058'
     ctx.fillRect(0, 0, w, h)
-    const tileH = h / 16
-    const tileW = w / 8
-    ctx.strokeStyle = '#2e2c34'
+    const tileH = h / 12
+    const tileW = w / 6
     ctx.lineWidth = 1
-    for (let row = 0; row < 16; row++) {
+    for (let row = 0; row < 12; row++) {
       const offsetX = row % 2 === 0 ? 0 : tileW / 2
-      for (let col = -1; col < 9; col++) {
+      for (let col = -1; col < 7; col++) {
         const x = offsetX + col * tileW
         const y = row * tileH
-        ctx.fillStyle = `hsl(240, 5%, ${22 + Math.random() * 6}%)`
-        ctx.fillRect(x, y, tileW, tileH)
+        const l = 30 + Math.random() * 8
+        ctx.fillStyle = `hsl(230, 6%, ${l}%)`
+        ctx.fillRect(x + 1, y + 1, tileW - 2, tileH - 2)
+        ctx.strokeStyle = `hsl(230, 6%, ${l - 8}%)`
         ctx.strokeRect(x, y, tileW, tileH)
       }
     }
   })
 
-  // Takstein – rød
+  // ── Takstein – rød (litt lysere) ──
   const roofRedTex = createProceduralTexture(256, 256, (ctx, w, h) => {
-    ctx.fillStyle = '#7a3028'
+    ctx.fillStyle = '#903830'
     ctx.fillRect(0, 0, w, h)
-    const tileH = h / 16
-    const tileW = w / 8
-    ctx.strokeStyle = '#602018'
+    const tileH = h / 12
+    const tileW = w / 6
     ctx.lineWidth = 1
-    for (let row = 0; row < 16; row++) {
+    for (let row = 0; row < 12; row++) {
       const offsetX = row % 2 === 0 ? 0 : tileW / 2
-      for (let col = -1; col < 9; col++) {
+      for (let col = -1; col < 7; col++) {
         const x = offsetX + col * tileW
         const y = row * tileH
         const hue = 5 + Math.random() * 10
-        ctx.fillStyle = `hsl(${hue}, 55%, ${28 + Math.random() * 8}%)`
-        ctx.fillRect(x, y, tileW, tileH)
+        const l = 32 + Math.random() * 10
+        ctx.fillStyle = `hsl(${hue}, 55%, ${l}%)`
+        ctx.fillRect(x + 1, y + 1, tileW - 2, tileH - 2)
+        ctx.strokeStyle = `hsl(${hue}, 50%, ${l - 8}%)`
         ctx.strokeRect(x, y, tileW, tileH)
       }
     }
@@ -201,40 +267,13 @@ const MESH_TEXTURE_MAP = {
 }
 
 function GLBBuildings() {
-  const { scene } = useGLTF('/map/buildings.glb')
+  const { nodes } = useGLTF('/map/buildings.glb')
   const sceneRef = useRef()
   const playerPos = useRef(new THREE.Vector3())
   const frameSkip = useRef(0)
 
   // Lag teksturer én gang
   const textures = useMemo(() => createBuildingTextures(), [])
-
-  useEffect(() => {
-    scene.traverse(child => {
-      if (child.isMesh) {
-        child.castShadow = true
-        child.receiveShadow = true
-
-        // Finn riktig tekstur basert på mesh-navn
-        const texKey = MESH_TEXTURE_MAP[child.name]
-        if (texKey && textures[texKey]) {
-          child.material = new THREE.MeshStandardMaterial({
-            map: textures[texKey],
-            roughness: child.material?.roughness ?? 0.85,
-            metalness: 0.0,
-            side: THREE.DoubleSide,
-          })
-        } else if (child.material) {
-          child.material.side = THREE.DoubleSide
-        }
-      }
-    })
-
-    return () => {
-      // Rydd opp teksturer ved unmount
-      Object.values(textures).forEach(tex => tex.dispose())
-    }
-  }, [scene, textures])
 
   useFrame(() => {
     frameSkip.current++
@@ -253,7 +292,25 @@ function GLBBuildings() {
 
   return (
     <group ref={sceneRef}>
-      <primitive object={scene} />
+      {Object.entries(MESH_TEXTURE_MAP).map(([meshName, texKey]) => {
+        const node = nodes[meshName]
+        if (!node || !node.geometry) return null
+        const tex = textures[texKey]
+        return (
+          <mesh
+            key={meshName}
+            geometry={node.geometry}
+            castShadow
+          >
+            <meshStandardMaterial
+              map={tex}
+              roughness={0.85}
+              metalness={0.0}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        )
+      })}
     </group>
   )
 }
