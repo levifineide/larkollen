@@ -29,9 +29,9 @@ const OUTPUT_DIR = path.join(__dirname, '..', 'public', 'map')
 const OSM_FILE = path.join(DATA_DIR, 'larkollen-osm.json')
 
 // ─── Koordinatsystem ───────────────────────────────────────────────
-// Origo: Larkollen kirke → lokal (0, 0)
-const ORIGIN_LAT = 59.4022
-const ORIGIN_LON = 10.8175
+// Origo: Støtvig Hotel, Larkollen → lokal (0, 0)
+const ORIGIN_LAT = 59.3289
+const ORIGIN_LON = 10.6682
 
 // UTM zone 32N
 proj4.defs('EPSG:25832', '+proj=utm +zone=32 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs')
@@ -45,7 +45,7 @@ function toLocal(lon, lat) {
 }
 
 // ─── Kartdimensjoner ───────────────────────────────────────────────
-const BBOX_S = 59.38, BBOX_N = 59.44, BBOX_W = 10.78, BBOX_E = 10.86
+const BBOX_S = 59.30, BBOX_N = 59.36, BBOX_W = 10.63, BBOX_E = 10.71
 const [MAP_W_MIN] = toLocal(BBOX_W, ORIGIN_LAT)
 const [MAP_W_MAX] = toLocal(BBOX_E, ORIGIN_LAT)
 const [, MAP_N_MIN] = toLocal(ORIGIN_LON, BBOX_S)
@@ -126,6 +126,15 @@ function createMultiMeshGLBDocument(name, meshDatas) {
       .setAttribute('NORMAL', normAccessor)
       .setIndices(idxAccessor)
       .setMaterial(material)
+
+    // Legg til UV-koordinater hvis tilgjengelig
+    if (md.uvs && md.uvs.length > 0) {
+      const uvAccessor = doc.createAccessor(`${md.name}_uv`)
+        .setType('VEC2')
+        .setArray(new Float32Array(md.uvs))
+        .setBuffer(buffer)
+      prim.setAttribute('TEXCOORD_0', uvAccessor)
+    }
 
     const mesh = doc.createMesh(md.name).addPrimitive(prim)
     const node = doc.createNode(md.name).setMesh(mesh)
@@ -440,21 +449,75 @@ function buildBuildings(geojson) {
     return null
   }
 
-  // Materialgrupper basert på bygningstype
+  // ── Materialgrupper – norsk fargeplett ──
+  // Vegggrupper: hvite hus, røde hus, gule hus, grå næringsbygg, mørke uthus
+  // Takgrupper: mørk takstein, rød takstein
   const groups = {
-    residential: { positions: [], normals: [], indices: [], color: [0.85, 0.82, 0.75], roughness: 0.9 },
-    commercial:  { positions: [], normals: [], indices: [], color: [0.75, 0.73, 0.68], roughness: 0.8 },
-    industrial:  { positions: [], normals: [], indices: [], color: [0.6, 0.58, 0.55], roughness: 0.7 },
-    other:       { positions: [], normals: [], indices: [], color: [0.8, 0.78, 0.72], roughness: 0.85 },
+    walls_white:    { positions: [], normals: [], uvs: [], indices: [], color: [0.92, 0.90, 0.87], roughness: 0.85 },
+    walls_red:      { positions: [], normals: [], uvs: [], indices: [], color: [0.55, 0.18, 0.14], roughness: 0.80 },
+    walls_yellow:   { positions: [], normals: [], uvs: [], indices: [], color: [0.88, 0.82, 0.55], roughness: 0.82 },
+    walls_grey:     { positions: [], normals: [], uvs: [], indices: [], color: [0.65, 0.63, 0.60], roughness: 0.75 },
+    walls_darkwood: { positions: [], normals: [], uvs: [], indices: [], color: [0.35, 0.25, 0.18], roughness: 0.90 },
+    roof_dark:      { positions: [], normals: [], uvs: [], indices: [], color: [0.22, 0.22, 0.25], roughness: 0.70 },
+    roof_red:       { positions: [], normals: [], uvs: [], indices: [], color: [0.50, 0.20, 0.15], roughness: 0.75 },
   }
 
-  function getGroup(tags) {
+  // Bestem vegg- og tak-gruppe basert på bygningstype
+  function getWallGroup(tags) {
     const bt = tags.building
-    if (['house', 'residential', 'apartments', 'detached', 'semidetached_house', 'terrace', 'cabin'].includes(bt)) return groups.residential
-    if (['commercial', 'retail', 'office', 'shop'].includes(bt)) return groups.commercial
-    if (['industrial', 'warehouse', 'garage', 'garages', 'shed'].includes(bt)) return groups.industrial
-    return groups.other
+    // Røde uthus/låver
+    if (['barn', 'farm_auxiliary', 'farm'].includes(bt)) return groups.walls_red
+    // Mørke trebygninger (sjøboder, boder)
+    if (['boathouse', 'shed', 'hut'].includes(bt)) return groups.walls_darkwood
+    // Grå næringsbygg
+    if (['commercial', 'retail', 'office', 'industrial', 'warehouse', 'school', 'civic', 'sports_centre', 'kindergarten'].includes(bt)) return groups.walls_grey
+    // Garasjer – grå
+    if (['garage', 'garages'].includes(bt)) return groups.walls_grey
+    // Hytter – gule/oker (typisk norsk)
+    if (['cabin'].includes(bt)) return groups.walls_yellow
+    // Bolighus – hvite (mest vanlig i Larkollen)
+    if (['house', 'residential', 'apartments', 'detached', 'semidetached_house', 'terrace', 'hotel'].includes(bt)) return groups.walls_white
+    // Ukjent → hvit (de fleste i Larkollen er hvite bolighus)
+    return groups.walls_white
   }
+
+  function getRoofGroup(tags) {
+    const bt = tags.building
+    // Rødt tak på røde/brune bygninger
+    if (['barn', 'farm_auxiliary', 'farm', 'cabin'].includes(bt)) return groups.roof_red
+    // Mørkt tak for alt annet
+    return groups.roof_dark
+  }
+
+  // Skal bygningen ha saltak (gabled roof)?
+  function shouldHaveGabledRoof(tags) {
+    const bt = tags.building
+    // Flate tak for: garasjer, boder, industribygg, næringsbygg
+    if (['garage', 'garages', 'shed', 'industrial', 'warehouse', 'commercial', 'hut', 'bunker', 'kiosk'].includes(bt)) return false
+    // Saltak for alle boliger, hytter, gårder, låver osv.
+    return true
+  }
+
+  // ── Hjelpefunksjon: Finn polygon-retning (lengste akse) for saltak ──
+  function findRidgeAxis(localCoords) {
+    // Beregn oriented bounding box approx via lengste kant
+    let maxLen = 0
+    let ridgeDx = 1, ridgeDz = 0
+    for (let i = 0; i < localCoords.length - 1; i++) {
+      const dx = localCoords[i + 1][0] - localCoords[i][0]
+      const dz = localCoords[i + 1][1] - localCoords[i][1]
+      const len = Math.sqrt(dx * dx + dz * dz)
+      if (len > maxLen) {
+        maxLen = len
+        ridgeDx = dx / len
+        ridgeDz = dz / len
+      }
+    }
+    return [ridgeDx, ridgeDz]
+  }
+
+  let gabledCount = 0
+  let flatCount = 0
 
   for (const feature of buildingFeatures) {
     try {
@@ -463,7 +526,7 @@ function buildBuildings(geojson) {
 
       const tags = feature.properties
       const levels = parseInt(tags['building:levels']) || 1
-      const height = levels * 3.2
+      const wallHeight = levels * 3.2
 
       // Konverter koordinater til lokale meter
       const localCoords = coords.map(([lon, lat]) => {
@@ -471,61 +534,155 @@ function buildBuildings(geojson) {
         return [x, -z] // Three.js Z er negativ nord
       })
 
-      const group = getGroup(tags)
-      const baseIdx = group.positions.length / 3
+      const wallGroup = getWallGroup(tags)
+      const roofGroup = getRoofGroup(tags)
+      const gabled = shouldHaveGabledRoof(tags)
 
       // Beregn terrenghøyde ved bygningens sentroid
-      const cx = localCoords.reduce((s, c) => s + c[0], 0) / localCoords.length
-      const cz = localCoords.reduce((s, c) => s + c[1], 0) / localCoords.length
-      // NB: getTerrainHeightAtLocal bruker localZ (northing), men cz er allerede negert for Three.js
-      const groundY = getTerrainHeightAtLocal(cx, -cz)
+      const centX = localCoords.reduce((s, c) => s + c[0], 0) / localCoords.length
+      const centZ = localCoords.reduce((s, c) => s + c[1], 0) / localCoords.length
+      const groundY = getTerrainHeightAtLocal(centX, -centZ)
 
-      // Vegger (ExtrudeGeometry-lignende)
+      // ── Vegger med UV ──
+      let wallRunU = 0 // Akkumulert U langs fasaden
       for (let i = 0; i < localCoords.length - 1; i++) {
         const [x1, z1] = localCoords[i]
         const [x2, z2] = localCoords[i + 1]
 
         const dx = x2 - x1
         const dz = z2 - z1
-        const len = Math.sqrt(dx * dx + dz * dz)
-        if (len < 0.1) continue
+        const segLen = Math.sqrt(dx * dx + dz * dz)
+        if (segLen < 0.1) continue
 
         // Normal peker utover
-        const nx = -dz / len
-        const nz = dx / len
+        const nx = -dz / segLen
+        const nz = dx / segLen
 
-        const vi = group.positions.length / 3
+        const vi = wallGroup.positions.length / 3
 
-        // 4 vertices for veggsegment – plassert på terrengoverflaten
-        group.positions.push(x1, groundY, z1, x2, groundY, z2, x2, groundY + height, z2, x1, groundY + height, z1)
-        group.normals.push(nx, 0, nz, nx, 0, nz, nx, 0, nz, nx, 0, nz)
+        // 4 vertices: bottom-left, bottom-right, top-right, top-left
+        wallGroup.positions.push(x1, groundY, z1, x2, groundY, z2, x2, groundY + wallHeight, z2, x1, groundY + wallHeight, z1)
+        wallGroup.normals.push(nx, 0, nz, nx, 0, nz, nx, 0, nz, nx, 0, nz)
+
+        // UV: tile vegg-tekstur – 1 UV-enhet = 3 meter (naturlig panel-bredde)
+        const uStart = wallRunU / 3.0
+        const uEnd = (wallRunU + segLen) / 3.0
+        const vTop = wallHeight / 3.0
+        wallGroup.uvs.push(uStart, 0, uEnd, 0, uEnd, vTop, uStart, vTop)
+        wallRunU += segLen
 
         // 2 triangler
-        group.indices.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3)
+        wallGroup.indices.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3)
       }
 
-      // Tak (fan-triangulering fra sentroid)
-      const roofY = groundY + height
-      const roofBaseIdx = group.positions.length / 3
+      // ── Tak ──
+      const roofBaseY = groundY + wallHeight
 
-      // Senterpunkt
-      group.positions.push(cx, roofY, cz)
-      group.normals.push(0, 1, 0)
+      if (gabled) {
+        gabledCount++
+        // Saltak: ridge langs lengste akse, 30° helling
+        const [rdx, rdz] = findRidgeAxis(localCoords)
+        const roofPitch = 0.35 // tak-høyde som andel av halv bredde
 
-      // Randpunkter
-      for (const [x, z] of localCoords) {
-        group.positions.push(x, roofY, z)
-        group.normals.push(0, 1, 0)
-      }
+        // Beregn bredde vinkelrett på ridge-aksen for å finne tak-høyde
+        let minProj = Infinity, maxProj = -Infinity
+        for (const [x, z] of localCoords) {
+          const proj = (x - centX) * (-rdz) + (z - centZ) * rdx
+          if (proj < minProj) minProj = proj
+          if (proj > maxProj) maxProj = proj
+        }
+        const halfWidth = (maxProj - minProj) / 2
+        const ridgeHeight = halfWidth * roofPitch
 
-      // Fan-triangulering fra senterpunkt
-      for (let i = 0; i < localCoords.length - 1; i++) {
-        group.indices.push(roofBaseIdx, roofBaseIdx + 1 + i, roofBaseIdx + 2 + i)
+        // Ridge-linje: finn extent langs ridge-retning
+        let minRidge = Infinity, maxRidge = -Infinity
+        for (const [x, z] of localCoords) {
+          const proj = (x - centX) * rdx + (z - centZ) * rdz
+          if (proj < minRidge) minRidge = proj
+          if (proj > maxRidge) maxRidge = proj
+        }
+
+        // Ridge-endepunkter (med litt overheng)
+        const overhang = 0.3
+        const r1x = centX + rdx * (minRidge - overhang)
+        const r1z = centZ + rdz * (minRidge - overhang)
+        const r2x = centX + rdx * (maxRidge + overhang)
+        const r2z = centZ + rdz * (maxRidge + overhang)
+        const ridgeY = roofBaseY + ridgeHeight
+
+        // For hvert polygon-segment, lag takflate fra eaves til ridge
+        // Forenklet: lag to takflater (venstre og høyre side av ridge)
+        for (let i = 0; i < localCoords.length - 1; i++) {
+          const [x1, z1] = localCoords[i]
+          const [x2, z2] = localCoords[i + 1]
+
+          // Hvilken side av ridge er dette segmentet?
+          const mid1 = (x1 - centX) * (-rdz) + (z1 - centZ) * rdx
+          const mid2 = (x2 - centX) * (-rdz) + (z2 - centZ) * rdx
+          const avgSide = (mid1 + mid2) / 2
+
+          // Projiser eaves-punkter langs ridge for å finne nærmeste ridge-punkt
+          const p1ridge = (x1 - centX) * rdx + (z1 - centZ) * rdz
+          const p2ridge = (x2 - centX) * rdx + (z2 - centZ) * rdz
+          const rp1x = centX + rdx * p1ridge
+          const rp1z = centZ + rdz * p1ridge
+          const rp2x = centX + rdx * p2ridge
+          const rp2z = centZ + rdz * p2ridge
+
+          const vi = roofGroup.positions.length / 3
+
+          // Takflate: eaves1, eaves2, ridge2, ridge1 (quad)
+          roofGroup.positions.push(
+            x1, roofBaseY, z1,
+            x2, roofBaseY, z2,
+            rp2x, ridgeY, rp2z,
+            rp1x, ridgeY, rp1z
+          )
+
+          // Normal: kryssproduktet av takflaten
+          const e1x = x2 - x1, e1y = 0, e1z = z2 - z1
+          const e2x = rp1x - x1, e2y = ridgeHeight, e2z = rp1z - z1
+          let rnx = e1y * e2z - e1z * e2y
+          let rny = e1z * e2x - e1x * e2z
+          let rnz = e1x * e2y - e1y * e2x
+          const rnLen = Math.sqrt(rnx * rnx + rny * rny + rnz * rnz) || 1
+          rnx /= rnLen; rny /= rnLen; rnz /= rnLen
+          if (rny < 0) { rnx = -rnx; rny = -rny; rnz = -rnz } // Normal skal peke oppover
+
+          roofGroup.normals.push(rnx, rny, rnz, rnx, rny, rnz, rnx, rny, rnz, rnx, rny, rnz)
+
+          // UV for tak (tile takstein-tekstur)
+          const segLen = Math.sqrt((x2 - x1) ** 2 + (z2 - z1) ** 2)
+          const slopeLen = Math.sqrt(halfWidth ** 2 + ridgeHeight ** 2)
+          roofGroup.uvs.push(0, 0, segLen / 2.0, 0, segLen / 2.0, slopeLen / 2.0, 0, slopeLen / 2.0)
+
+          roofGroup.indices.push(vi, vi + 1, vi + 2, vi, vi + 2, vi + 3)
+        }
+      } else {
+        flatCount++
+        // Flatt tak (fan-triangulering fra sentroid)
+        const roofBaseIdx = roofGroup.positions.length / 3
+
+        roofGroup.positions.push(centX, roofBaseY, centZ)
+        roofGroup.normals.push(0, 1, 0)
+        roofGroup.uvs.push(0.5, 0.5)
+
+        for (const [x, z] of localCoords) {
+          roofGroup.positions.push(x, roofBaseY, z)
+          roofGroup.normals.push(0, 1, 0)
+          roofGroup.uvs.push((x - centX) / 10.0 + 0.5, (z - centZ) / 10.0 + 0.5)
+        }
+
+        for (let i = 0; i < localCoords.length - 1; i++) {
+          roofGroup.indices.push(roofBaseIdx, roofBaseIdx + 1 + i, roofBaseIdx + 2 + i)
+        }
       }
     } catch (e) {
       // Hopp over ugyldige bygninger
     }
   }
+
+  console.log(`  Saltak: ${gabledCount}, Flatt tak: ${flatCount}`)
 
   // Lag mesh data for alle grupper med innhold
   const meshDatas = Object.entries(groups)
@@ -534,6 +691,7 @@ function buildBuildings(geojson) {
       name: `buildings_${name}`,
       positions: g.positions,
       normals: g.normals,
+      uvs: g.uvs,
       indices: g.indices,
       color: g.color,
       roughness: g.roughness,
@@ -718,7 +876,7 @@ async function main() {
   }
 
   console.log(`\nKartdimensjoner: ${MAP_WIDTH.toFixed(0)}m × ${MAP_DEPTH.toFixed(0)}m`)
-  console.log(`Origo: Larkollen kirke (${ORIGIN_LAT}°N, ${ORIGIN_LON}°E)`)
+  console.log(`Origo: Støtvig Hotel, Larkollen (${ORIGIN_LAT}°N, ${ORIGIN_LON}°E)`)
 
   // Last OSM-data
   console.log('\nLaster OSM-data...')

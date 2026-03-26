@@ -14,8 +14,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const OUTPUT_DIR = path.join(__dirname, 'data')
 const OUTPUT_FILE = path.join(OUTPUT_DIR, 'larkollen-osm.json')
 
-// Larkollen bounding box
-const BBOX = '59.38,10.78,59.44,10.86'
+// Larkollen bounding box (sentrum: Støtvig Hotel 59.3289°N, 10.6682°E)
+const BBOX = '59.30,10.63,59.36,10.71'
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
 

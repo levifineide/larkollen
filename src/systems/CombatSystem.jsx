@@ -2,8 +2,10 @@ import { useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { usePlayerStore } from '../stores/usePlayerStore'
+import { useMultiplayerStore } from '../stores/useMultiplayerStore'
 import { inputState } from './InputSystem'
 import { zombiePool } from './ZombieManager'
+import { getSocket } from './NetworkSystem'
 import weaponData from '../data/weapons.json'
 import { queueProjectile } from './ProjectileSystem'
 
@@ -160,6 +162,11 @@ function fireRay(camera, wConfig, state) {
     closestEntity.takeDamage(wConfig.damage)
     if (closestEntity.health <= 0) {
       state.incrementKills()
+      // Varsle server om zombiedrap (multiplayer)
+      const { isConnected } = useMultiplayerStore.getState()
+      if (isConnected) {
+        getSocket()?.emit('zombie-killed', { zombieId: closestEntity.zombieId })
+      }
     }
   }
 }

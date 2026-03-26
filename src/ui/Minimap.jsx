@@ -1,28 +1,28 @@
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect, useCallback, useState } from 'react'
 import { usePlayerStore } from '../stores/usePlayerStore'
 import { zombiePool } from '../systems/ZombieManager'
 import { npcPool } from '../systems/NPCManager'
 
-const MAP_SIZE = 160       // pikselstørrelse på minikartet
+const MAP_SIZE = 160       // pikselstørrelse på minikartet (liten)
+const MAP_SIZE_LARGE = 320 // pikselstørrelse på minikartet (stor, ved klikk)
 const MAP_RANGE = 100      // meter radius synlig på kartet
+const MAP_RANGE_LARGE = 200 // meter radius synlig på kartet (stor)
 const UPDATE_MS = 200      // oppdater minikartet hvert 200ms (5 Hz)
 
 // Mapbox config
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || ''
 const MAPBOX_STYLE = 'mapbox/streets-v12'
-const MAP_ZOOM = 17        // ~0.6 m/px ved lat 59.4 → ~194m for 320px bilde
-const TILE_SIZE = MAP_SIZE * 2  // canvas-oppløsning (retina)
+const MAP_ZOOM = 17        // ~0.6 m/px ved lat 59.33
+const MAP_ZOOM_LARGE = 16  // litt mer utzoomet for stor versjon
+const TILE_SIZE = MAP_SIZE_LARGE * 2  // canvas-oppløsning (retina)
 
-// Kartets origo i spill-verdenen (fra build-map.mjs)
-const ORIGIN_LAT = 59.4022
-const ORIGIN_LON = 10.8175
+// Kartets origo i spill-verdenen (Støtvig Hotel, Larkollen)
+const ORIGIN_LAT = 59.3289
+const ORIGIN_LON = 10.6682
 
 // Meter per grad ved denne breddegraden
 const DEG_TO_M_LAT = 111320
 const DEG_TO_M_LON = 111320 * Math.cos(ORIGIN_LAT * Math.PI / 180)
-
-// Meter per piksel ved gitt zoom og breddegrad (uten @2x)
-const METERS_PER_PX = 156543.03 * Math.cos(ORIGIN_LAT * Math.PI / 180) / Math.pow(2, MAP_ZOOM)
 
 // Hvor langt spilleren må flytte før vi henter nytt kartbilde (meter)
 const REFETCH_THRESHOLD = 30
@@ -35,11 +35,20 @@ function gameToLatLon(gameX, gameZ) {
   return [lat, lon]
 }
 
+function metersPerPx(zoom) {
+  return 156543.03 * Math.cos(ORIGIN_LAT * Math.PI / 180) / Math.pow(2, zoom)
+}
+
 export default function Minimap() {
   const canvasRef = useRef(null)
   const tileImgRef = useRef(null)       // cached Image-objekt
   const tileCenterRef = useRef([0, 0])  // [gameX, gameZ] for senter av cached tile
   const loadingRef = useRef(false)
+  const expandedRef = useRef(false)
+  const [expanded, setExpanded] = useState(false)
+
+  // Synkroniser ref med state (for bruk i draw-callback uten re-create)
+  expandedRef.current = expanded
 
   /** Hent nytt Mapbox Static Image sentrert på gitt spillposisjon */
   const fetchTile = useCallback((gameX, gameZ) => {
@@ -47,7 +56,8 @@ export default function Minimap() {
     loadingRef.current = true
 
     const [lat, lon] = gameToLatLon(gameX, gameZ)
-    const url = `https://api.mapbox.com/styles/v1/${MAPBOX_STYLE}/static/${lon.toFixed(6)},${lat.toFixed(6)},${MAP_ZOOM},0/${TILE_SIZE}x${TILE_SIZE}@2x?access_token=${MAPBOX_TOKEN}&attribution=false&logo=false`
+    const zoom = expandedRef.current ? MAP_ZOOM_LARGE : MAP_ZOOM
+    const url = `https://api.mapbox.com/styles/v1/${MAPBOX_STYLE}/static/${lon.toFixed(6)},${lat.toFixed(6)},${zoom},0/${TILE_SIZE}x${TILE_SIZE}@2x?access_token=${MAPBOX_TOKEN}&attribution=false&logo=false`
 
     const img = new Image()
     img.crossOrigin = 'anonymous'
@@ -68,6 +78,12 @@ export default function Minimap() {
     if (!canvas) return
     const ctx = canvas.getContext('2d')
 
+    const isExpanded = expandedRef.current
+    const currentSize = isExpanded ? MAP_SIZE_LARGE : MAP_SIZE
+    const currentRange = isExpanded ? MAP_RANGE_LARGE : MAP_RANGE
+    const currentZoom = isExpanded ? MAP_ZOOM_LARGE : MAP_ZOOM
+    const mPerPx = metersPerPx(currentZoom)
+
     const playerPos = usePlayerStore.getState().position
     const px = playerPos[0]
     const pz = playerPos[2]
@@ -76,7 +92,7 @@ export default function Minimap() {
     const h = canvas.height
     const cx = w / 2
     const cy = h / 2
-    const scale = (w / 2) / MAP_RANGE
+    const scale = (w / 2) / currentRange
 
     // Sjekk om vi trenger nytt kartbilde
     const [tcx, tcz] = tileCenterRef.current
@@ -98,15 +114,10 @@ export default function Minimap() {
       const [tcx2, tcz2] = tileCenterRef.current
 
       // Offset mellom spillerens posisjon og tile-senteret, i piksler
-      const offsetX = (px - tcx2) / METERS_PER_PX
-      const offsetZ = (pz - tcz2) / METERS_PER_PX
+      const offsetX = (px - tcx2) / mPerPx
+      const offsetZ = (pz - tcz2) / mPerPx
 
-      // Skalering: kartet viser MAP_RANGE meter i (w/2) piksler
-      // Mapbox-bildet har 1 piksel = METERS_PER_PX meter
-      // Så 1 game-meter = 1/METERS_PER_PX bildepiksler
-      // På canvas: 1 game-meter = scale canvas-piksler
-      // Ergo: 1 bildepiksel = scale * METERS_PER_PX canvas-piksler
-      const imgScale = scale * METERS_PER_PX
+      const imgScale = scale * mPerPx
 
       // Tegn bildet sentrert, forskjøvet for spillerens bevegelse
       const drawW = img.width * imgScale
@@ -122,7 +133,7 @@ export default function Minimap() {
     }
 
     // Halvtransparent overlay for bedre lesbarhet av prikker
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.15)'
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)'
     ctx.beginPath()
     ctx.arc(cx, cy, cx - 2, 0, Math.PI * 2)
     ctx.fill()
@@ -148,7 +159,7 @@ export default function Minimap() {
       if (zombie.health <= 0) continue
       const dx = zombie.position.x - px
       const dz = zombie.position.z - pz
-      if (Math.abs(dx) > MAP_RANGE || Math.abs(dz) > MAP_RANGE) continue
+      if (Math.abs(dx) > currentRange || Math.abs(dz) > currentRange) continue
 
       const sx = cx + dx * scale
       const sy = cy + dz * scale
@@ -162,7 +173,7 @@ export default function Minimap() {
     for (const [, npc] of npcPool) {
       const dx = npc.position.x - px
       const dz = npc.position.z - pz
-      if (Math.abs(dx) > MAP_RANGE || Math.abs(dz) > MAP_RANGE) continue
+      if (Math.abs(dx) > currentRange || Math.abs(dz) > currentRange) continue
 
       const sx = cx + dx * scale
       const sy = cy + dz * scale
@@ -185,6 +196,13 @@ export default function Minimap() {
     ctx.stroke()
   }, [fetchTile])
 
+  // Force re-fetch when toggling expanded
+  useEffect(() => {
+    tileImgRef.current = null // invalidate cached tile (zoom changed)
+    const playerPos = usePlayerStore.getState().position
+    fetchTile(playerPos[0], playerPos[2])
+  }, [expanded, fetchTile])
+
   useEffect(() => {
     // Hent første tile umiddelbart
     const playerPos = usePlayerStore.getState().position
@@ -195,23 +213,36 @@ export default function Minimap() {
     return () => clearInterval(id)
   }, [draw, fetchTile])
 
+  const currentSize = expanded ? MAP_SIZE_LARGE : MAP_SIZE
+
+  const handleClick = useCallback(() => {
+    setExpanded(prev => !prev)
+  }, [])
+
   return (
-    <div style={{
-      position: 'fixed',
-      bottom: 24,
-      left: '50%',
-      transform: 'translateX(-50%)',
-      pointerEvents: 'none',
-      zIndex: 5,
-    }}>
+    <div
+      onClick={handleClick}
+      style={{
+        position: 'fixed',
+        bottom: 24,
+        right: 24,
+        pointerEvents: 'auto',
+        cursor: 'pointer',
+        zIndex: 5,
+        transition: 'width 0.2s ease, height 0.2s ease',
+        width: currentSize,
+        height: currentSize,
+      }}
+    >
       <canvas
         ref={canvasRef}
         width={TILE_SIZE}
         height={TILE_SIZE}
         style={{
-          width: MAP_SIZE,
-          height: MAP_SIZE,
+          width: currentSize,
+          height: currentSize,
           borderRadius: '50%',
+          transition: 'width 0.2s ease, height 0.2s ease',
         }}
       />
       <div style={{
@@ -220,7 +251,7 @@ export default function Minimap() {
         left: '50%',
         transform: 'translateX(-50%)',
         color: '#fff',
-        fontSize: 9,
+        fontSize: expanded ? 12 : 9,
         fontFamily: 'monospace',
         fontWeight: 'bold',
         textShadow: '0 0 3px rgba(0,0,0,0.8)',

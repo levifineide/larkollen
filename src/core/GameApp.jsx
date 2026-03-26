@@ -17,14 +17,18 @@ import MissionSystem from '../systems/MissionSystem'
 import DayNightCycle from '../systems/DayNightCycle'
 import RainSystem from '../systems/RainSystem'
 import PostProcessing from '../systems/PostProcessing'
+import NetworkSystem from '../systems/NetworkSystem'
+import RemotePlayersRenderer from '../entities/Player/RemotePlayersRenderer'
 import HUD from '../ui/HUD'
 import WeaponWheel from '../ui/WeaponWheel'
 import MissionPanel from '../ui/MissionPanel'
 import Minimap from '../ui/Minimap'
 import DialoguePanel from '../ui/DialoguePanel'
+import Lobby from '../ui/Lobby'
+import { useMultiplayerStore } from '../stores/useMultiplayerStore'
 
 /* ── Startskjerm ── */
-function StartScreen({ onStart }) {
+function StartScreen({ onStart, onMultiplayer }) {
   return (
     <div
       style={{
@@ -60,11 +64,32 @@ function StartScreen({ onStart }) {
           cursor: 'pointer',
           transition: 'transform 0.1s, box-shadow 0.2s',
           boxShadow: '0 0 20px rgba(230,57,70,0.4)',
+          marginBottom: 12,
         }}
         onMouseEnter={e => { e.target.style.transform = 'scale(1.05)'; e.target.style.boxShadow = '0 0 30px rgba(230,57,70,0.6)' }}
         onMouseLeave={e => { e.target.style.transform = 'scale(1)'; e.target.style.boxShadow = '0 0 20px rgba(230,57,70,0.4)' }}
       >
-        START SPILLET
+        SPILL ALENE
+      </button>
+      <button
+        onClick={onMultiplayer}
+        style={{
+          padding: '14px 48px',
+          fontSize: 18,
+          fontFamily: 'monospace',
+          fontWeight: 'bold',
+          color: '#fff',
+          background: '#2d2d4e',
+          border: '1px solid #4ecdc4',
+          borderRadius: 8,
+          cursor: 'pointer',
+          transition: 'transform 0.1s, box-shadow 0.2s',
+          boxShadow: '0 0 15px rgba(78,205,196,0.2)',
+        }}
+        onMouseEnter={e => { e.target.style.transform = 'scale(1.05)'; e.target.style.boxShadow = '0 0 25px rgba(78,205,196,0.4)' }}
+        onMouseLeave={e => { e.target.style.transform = 'scale(1)'; e.target.style.boxShadow = '0 0 15px rgba(78,205,196,0.2)' }}
+      >
+        FLERSPILLER
       </button>
       <p style={{ fontSize: 12, color: '#555', marginTop: 32 }}>
         WASD: Beveg &nbsp;|&nbsp; Shift: Sprint &nbsp;|&nbsp; Space: Hopp
@@ -147,6 +172,7 @@ function Scene({ cameraYaw, cameraPitch }) {
       <Physics gravity={[0, -9.81, 0]}>
         <LarkollenWorld />
         <PlayerController cameraYaw={cameraYaw} />
+        <RemotePlayersRenderer />
         <VehicleManager />
         <ZombieManager />
         <NPCManager />
@@ -154,6 +180,9 @@ function Scene({ cameraYaw, cameraPitch }) {
         <ProjectileSystem />
         <MissionSystem />
       </Physics>
+
+      {/* Nettverkssynk – sender/mottar spillerdata */}
+      <NetworkSystem />
 
       <CameraSystem cameraYaw={cameraYaw} cameraPitch={cameraPitch} />
 
@@ -168,11 +197,27 @@ function Scene({ cameraYaw, cameraPitch }) {
 
 export default function GameApp() {
   const [started, setStarted] = useState(false)
+  const [showLobby, setShowLobby] = useState(false)
   const cameraYaw   = useRef(0)
   const cameraPitch = useRef(0.15)
 
-  if (!started) {
-    return <StartScreen onStart={() => setStarted(true)} />
+  const gameStarted = useMultiplayerStore((s) => s.gameStarted)
+  const isConnected = useMultiplayerStore((s) => s.isConnected)
+  const ping = useMultiplayerStore((s) => s.ping)
+
+  // Start spillet når multiplayer-lobby starter
+  const effectiveStarted = started || gameStarted
+
+  if (!effectiveStarted) {
+    if (showLobby) {
+      return <Lobby onClose={() => setShowLobby(false)} />
+    }
+    return (
+      <StartScreen
+        onStart={() => setStarted(true)}
+        onMultiplayer={() => setShowLobby(true)}
+      />
+    )
   }
 
   return (
@@ -217,6 +262,25 @@ export default function GameApp() {
         G: Skyt &nbsp;|&nbsp; T: Sikt &nbsp;|&nbsp; R: Lad om<br />
         1-7: Våpen &nbsp;|&nbsp; Q (hold): Våpenhjul
       </div>
+
+      {/* Multiplayer-info (vises kun når tilkoblet) */}
+      {isConnected && (
+        <div style={{
+          position: 'fixed',
+          top: 12,
+          right: 12,
+          color: '#4ecdc4',
+          fontSize: 11,
+          fontFamily: 'monospace',
+          pointerEvents: 'none',
+          textAlign: 'right',
+          background: 'rgba(0,0,0,0.5)',
+          padding: '6px 10px',
+          borderRadius: 4,
+        }}>
+          ONLINE &bull; {ping}ms
+        </div>
+      )}
     </ErrorBoundary>
   )
 }

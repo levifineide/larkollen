@@ -79,7 +79,14 @@
       "Bash(git commit:*)",
       "Bash(git push:*)",
       "Bash(grep -c '\"\"building\"\"' /Users/leviaugustfineide/projects/larkollen/scripts/data/larkollen-osm.json)",
-      "Bash(grep -c '\"\"highway\"\"' /Users/leviaugustfineide/projects/larkollen/scripts/data/larkollen-osm.json)"
+      "Bash(grep -c '\"\"highway\"\"' /Users/leviaugustfineide/projects/larkollen/scripts/data/larkollen-osm.json)",
+      "Bash(find /Users/leviaugustfineide/projects/larkollen/public -type f ! -path */.*)",
+      "Bash(timeout 3 node server/index.mjs)",
+      "WebFetch(domain:www.openstreetmap.org)",
+      "Bash(curl -s \"https://nominatim.openstreetmap.org/search?q=Støtvig+Hotel+Larkollen&format=json&limit=5\")",
+      "WebFetch(domain:nominatim.openstreetmap.org)",
+      "Bash(source /Users/leviaugustfineide/projects/larkollen/.env)",
+      "Bash(export MAPBOX_TOKEN)"
     ]
   }
 }

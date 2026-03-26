@@ -5,6 +5,8 @@ import ZombieEntity from '../entities/Zombie/ZombieEntity'
 import ZombieInstance from '../entities/Zombie/ZombieInstance'
 import { usePlayerStore } from '../stores/usePlayerStore'
 import { useWorldStore } from '../stores/useWorldStore'
+import { useMultiplayerStore } from '../stores/useMultiplayerStore'
+import { getSocket } from './NetworkSystem'
 import * as THREE from 'three'
 
 const MAX_ZOMBIES = 15
@@ -77,10 +79,53 @@ export default function ZombieManager() {
       zombieListRef.current = spawned
       setRenderKey((k) => k + 1)
       useWorldStore.getState().setZombieCount(spawned.length)
+
+      // Varsle server om spawn (kun host)
+      const { isHost, isConnected } = useMultiplayerStore.getState()
+      if (isConnected && isHost) {
+        const sock = getSocket()
+        spawned.forEach((e) => {
+          sock?.emit('zombie-spawned', {
+            zombieId: e.zombieId,
+            x: e.position.x,
+            y: e.position.y,
+            z: e.position.z,
+          })
+        })
+      }
     }, SPAWN_DELAY)
 
     return () => clearTimeout(timer)
   }, [spawnZombie])
+
+  // Lytt til nettverkshendelser for zombie-synk
+  useEffect(() => {
+    const handleNetworkKill = (e) => {
+      const { zombieId } = e.detail
+      despawnZombie(zombieId)
+    }
+
+    const handleNetworkSpawn = (e) => {
+      const { zombieId, x, y, z } = e.detail
+      // Bare spawn om vi ikke allerede har den
+      if (zombiePool.has(zombieId)) return
+
+      const entity = new ZombieEntity(zombieId)
+      entity.position.set(x, y, z)
+      entityManager.add(entity)
+      zombiePool.set(zombieId, entity)
+      zombieListRef.current = [...zombieListRef.current, entity]
+      setRenderKey((k) => k + 1)
+    }
+
+    window.addEventListener('network-zombie-killed', handleNetworkKill)
+    window.addEventListener('network-zombie-spawned', handleNetworkSpawn)
+
+    return () => {
+      window.removeEventListener('network-zombie-killed', handleNetworkKill)
+      window.removeEventListener('network-zombie-spawned', handleNetworkSpawn)
+    }
+  }, [despawnZombie])
 
   useFrame((_, delta) => {
     const dt = Math.min(delta, 0.05)
@@ -117,8 +162,12 @@ export default function ZombieManager() {
     entityManagerRef.current.update(dt)
 
     // Spawn nye zombier periodisk – trigger kun én re-render per batch
+    // I multiplayer: kun host spawner zombier
+    const { isConnected, isHost: isHostPlayer } = useMultiplayerStore.getState()
+    const shouldSpawn = !isConnected || isHostPlayer
+
     spawnTimerRef.current -= dt
-    if (spawnTimerRef.current <= 0 && zombiePool.size < MAX_ZOMBIES) {
+    if (shouldSpawn && spawnTimerRef.current <= 0 && zombiePool.size < MAX_ZOMBIES) {
       spawnTimerRef.current = SPAWN_INTERVAL
       let spawned = false
       for (let i = 0; i < SPAWN_BATCH; i++) {
@@ -126,6 +175,17 @@ export default function ZombieManager() {
         if (entity) {
           zombieListRef.current = [...zombieListRef.current, entity]
           spawned = true
+
+          // Varsle server om ny zombie (multiplayer)
+          if (isConnected) {
+            const sock = getSocket()
+            sock?.emit('zombie-spawned', {
+              zombieId: entity.zombieId,
+              x: entity.position.x,
+              y: entity.position.y,
+              z: entity.position.z,
+            })
+          }
         }
       }
       if (spawned) setRenderKey((k) => k + 1)
