@@ -40,6 +40,38 @@
 - Hvis noe er vanskelig å teste automatisk, vær ærlig om det — men prøv alltid først
 - **Ikke merk noe som "ferdig" før det er verifisert** — si heller "implementert, men trenger visuell testing"
 
+## Utviklingspraksis
+
+### Inkrementell utvikling
+- Gjør små, testbare endringer — ikke skriv hundrevis av linjer før du tester
+- Et 3D-spill med fysikk har mange usynlige avhengigheter. En liten endring kan krasje alt
+- Etter hver meningsfull endring: verifiser at det fungerer før du går videre
+
+### Ytelse i R3F
+- **Aldri** bruk `useState` for data som oppdateres hvert frame — bruk `useRef` + `useFrame`
+- Ikke lag nye objekter, arrays eller vektorer inne i `useFrame` — gjenbruk med `useMemo` eller refs
+- Bruk instancing (`<Instances>`) når mange like objekter rendres (zombier, trær, kuler)
+- Vær bevisst på React re-renders — Zustand selectors skal være spesifikke, ikke hente hele store
+
+### Ikke bryt eksisterende funksjonalitet
+- Etter endringer: verifiser at spilleren kan bevege seg, zombier spawner, kamp fungerer — ikke bare den nye featuren
+- Hvis en endring påvirker flere systemer, test alle berørte systemer
+- Når i tvil, kjør appen og gjør en rask gjennomgang av kjernefunksjonalitet
+
+### Feilhåndtering i R3F
+- Hvis én komponent krasjer i R3F, dør hele canvas og spillet er borte
+- Bruk `<ErrorBoundary>` rundt nye/eksperimentelle komponenter
+- Vær defensiv med asset-lasting — sjekk at GLB/lyd/teksturer finnes, og ha fallback
+
+### Zustand som single source of truth
+- Sjekk alltid eksisterende stores (`useGameStore`, `usePlayerStore`) før du oppretter ny state
+- Ikke dupliser state mellom stores eller mellom store og komponent-state
+- I game loops og `useFrame`: bruk `useXxxStore.getState()`, ikke hooks
+
+### Git
+- Commit etter hver fungerende feature eller fix — ikke samle opp store endringer
+- Beskrivende commit-meldinger som forklarer hva og hvorfor
+
 ## Prosjektkontekst
 - GTA-lignende 3D zombie-spill satt i Larkollen, Norge
 - Kjører i nettleseren

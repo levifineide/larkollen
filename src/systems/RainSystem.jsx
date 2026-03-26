@@ -6,7 +6,7 @@ import { useWorldStore } from '../stores/useWorldStore'
 /**
  * RainSystem – GPU-instanserte regnstriper med vind-støtte.
  *
- * weather: 'none' | 'drizzle' | 'heavy' | 'storm'
+ * weather: 'none' | 'heavy' | 'storm'
  */
 
 const PARTICLE_COUNT = 10000
@@ -16,9 +16,8 @@ const SPREAD = 80
 // Intensitetsnivåer
 const INTENSITY = {
   none:    { count: 0, speed: 0, opacity: 0, wind: 0 },
-  drizzle: { count: 2500, speed: 28, opacity: 0.18, wind: 0.02 },
-  heavy:   { count: 6000, speed: 45, opacity: 0.3, wind: 0.08 },
-  storm:   { count: 10000, speed: 65, opacity: 0.4, wind: 0.35 },
+  heavy:   { count: 6000, speed: 280, opacity: 0.3, wind: 0.08 },
+  storm:   { count: 10000, speed: 420, opacity: 0.4, wind: 0.35 },
 }
 
 const vertexShader = `
@@ -31,6 +30,7 @@ const vertexShader = `
   uniform float uSpread;
   uniform vec3 uCameraPos;
   uniform float uWind;
+  uniform float uSpeed;
 
   varying float vAlpha;
 
@@ -38,13 +38,14 @@ const vertexShader = `
     vec3 pos = position;
 
     // Regndråpe-posisjon – loop i y
-    float y = mod(aOffset.y - uTime * aSpeed, uWorldHeight) - uWorldHeight * 0.5;
+    float speed = aSpeed * uSpeed;
+    float y = mod(aOffset.y - uTime * speed, uWorldHeight) - uWorldHeight * 0.5;
     float x = aOffset.x + uCameraPos.x;
     float z = aOffset.z + uCameraPos.z;
 
     // Vind-drift (sideveis regn)
-    x += uTime * aSpeed * uWind;
-    z += uTime * aSpeed * uWind * 0.3;
+    x += uTime * speed * uWind;
+    z += uTime * speed * uWind * 0.3;
 
     pos.x += x;
     pos.y += y + uCameraPos.y;
@@ -130,6 +131,7 @@ export default function RainSystem() {
         uCameraPos: { value: new THREE.Vector3() },
         uOpacity: { value: 0 },
         uWind: { value: 0 },
+        uSpeed: { value: 0 },
       },
       transparent: true,
       depthWrite: false,
@@ -145,6 +147,7 @@ export default function RainSystem() {
     material.uniforms.uCameraPos.value.copy(camera.position)
     material.uniforms.uOpacity.value = intensity.opacity
     material.uniforms.uWind.value = intensity.wind
+    material.uniforms.uSpeed.value = intensity.speed
 
     if (meshRef.current) {
       meshRef.current.geometry.setDrawRange(0, intensity.count * 2)

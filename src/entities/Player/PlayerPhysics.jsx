@@ -305,7 +305,7 @@ export default function PlayerPhysics({ cameraYaw }) {
 
     // ── Drei mesh mot bevegelsesretning ────────────────────────────────────
     if (meshRef.current && isMoving) {
-      const targetAngle  = Math.atan2(_moveDir.x, _moveDir.z) + Math.PI
+      const targetAngle  = Math.atan2(_moveDir.x, _moveDir.z)
       const currentAngle = meshRef.current.rotation.y
       const diff = ((targetAngle - currentAngle + Math.PI * 3) % (Math.PI * 2)) - Math.PI
       meshRef.current.rotation.y += diff * Math.min(1, 12 * delta)
@@ -318,7 +318,7 @@ export default function PlayerPhysics({ cameraYaw }) {
     <RigidBody
       ref={rigidBodyRef}
       type="kinematicPosition"
-      position={[0, 50, 0]}
+      position={[50, 50, 0]}
       enabledRotations={[false, false, false]}
       colliders={false}
     >

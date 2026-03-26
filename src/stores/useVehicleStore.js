@@ -10,28 +10,44 @@ export const VEHICLE_FLAME_THRESHOLD = 50
 export const VEHICLE_EXPLODE_THRESHOLD = 0
 
 export const useVehicleStore = create((set, get) => ({
-  vehicles: {
-    car:   { fuel: 100, health: 100, exploded: false },
-    truck: { fuel: 100, health: 100, exploded: false },
-    boat:  { fuel: 100, health: 100, exploded: false },
-  },
+  vehicles: {},
   activeId: null,
 
-  setFuel: (id, fuel) =>
-    set((s) => ({
+  // Registrer et nytt kjøretøy (kalles ved spawn)
+  registerVehicle: (id) => {
+    const { vehicles } = get()
+    if (vehicles[id]) return
+    set({
       vehicles: {
-        ...s.vehicles,
-        [id]: { ...s.vehicles[id], fuel: Math.max(0, Math.min(100, fuel)) },
+        ...vehicles,
+        [id]: { fuel: 100, health: 100, exploded: false },
       },
-    })),
+    })
+  },
+
+  setFuel: (id, fuel) =>
+    set((s) => {
+      const v = s.vehicles[id]
+      if (!v) return s
+      return {
+        vehicles: {
+          ...s.vehicles,
+          [id]: { ...v, fuel: Math.max(0, Math.min(100, fuel)) },
+        },
+      }
+    }),
 
   setHealth: (id, health) =>
-    set((s) => ({
-      vehicles: {
-        ...s.vehicles,
-        [id]: { ...s.vehicles[id], health: Math.max(0, Math.min(100, health)) },
-      },
-    })),
+    set((s) => {
+      const v = s.vehicles[id]
+      if (!v) return s
+      return {
+        vehicles: {
+          ...s.vehicles,
+          [id]: { ...v, health: Math.max(0, Math.min(100, health)) },
+        },
+      }
+    }),
 
   damageVehicle: (id, amount) => {
     const { vehicles } = get()
@@ -48,12 +64,16 @@ export const useVehicleStore = create((set, get) => ({
   },
 
   setExploded: (id) =>
-    set((s) => ({
-      vehicles: {
-        ...s.vehicles,
-        [id]: { ...s.vehicles[id], exploded: true, health: 0 },
-      },
-    })),
+    set((s) => {
+      const v = s.vehicles[id]
+      if (!v) return s
+      return {
+        vehicles: {
+          ...s.vehicles,
+          [id]: { ...v, exploded: true, health: 0 },
+        },
+      }
+    }),
 
   setActive: (id) => set({ activeId: id }),
   clearActive: () => set({ activeId: null }),

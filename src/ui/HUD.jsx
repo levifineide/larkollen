@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { usePlayerStore } from '../stores/usePlayerStore'
+import AddressSearch from './AddressSearch'
 import { useVehicleStore } from '../stores/useVehicleStore'
 import { useMissionStore } from '../stores/useMissionStore'
 import { useWorldStore } from '../stores/useWorldStore'
@@ -309,8 +310,11 @@ function LevelUpPopup({ levelUp, onDismiss }) {
   )
 }
 
-const WEATHER_MODES = ['none', 'drizzle', 'heavy', 'storm']
-const WEATHER_LABELS = { none: 'Klart', drizzle: 'Yr', heavy: 'Regn', storm: 'Storm' }
+const WEATHER_MODES = ['none', 'heavy', 'storm']
+const WEATHER_LABELS = { none: 'Klart', heavy: 'Regn', storm: 'Storm' }
+
+const LIGHTING_MODES = ['normal', 'day', 'evening']
+const LIGHTING_LABELS = { normal: 'Normal', day: 'Dag', evening: 'Kveld' }
 
 function WeatherControls() {
   const weather = useWorldStore((s) => s.weather)
@@ -319,52 +323,44 @@ function WeatherControls() {
   const setTimeOfDay = useWorldStore((s) => s.setTimeOfDay)
   const dayNightPaused = useWorldStore((s) => s.dayNightPaused)
   const setDayNightPaused = useWorldStore((s) => s.setDayNightPaused)
+  const lightingMode = useWorldStore((s) => s.lightingMode)
+  const setLightingMode = useWorldStore((s) => s.setLightingMode)
+  const [spawnOpen, setSpawnOpen] = useState(false)
+
+  const openSpawn = useCallback(() => {
+    document.exitPointerLock()
+    setSpawnOpen(true)
+  }, [])
+  const closeSpawn = useCallback(() => setSpawnOpen(false), [])
 
   const hours = Math.floor(timeOfDay * 24)
   const minutes = Math.floor((timeOfDay * 24 - hours) * 60)
   const timeStr = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: 12,
-      left: '50%',
-      transform: 'translateX(-50%)',
-      display: 'flex',
-      alignItems: 'center',
-      gap: 12,
-      fontFamily: 'monospace',
-      fontSize: 12,
-      color: '#ccc',
-      background: 'rgba(0,0,0,0.4)',
-      padding: '6px 16px',
-      borderRadius: 8,
-      pointerEvents: 'auto',
-      zIndex: 20,
-    }}>
-      <span style={{ fontSize: 16, fontWeight: 'bold', color: '#ffd700' }}>{timeStr}</span>
-      <button
-        onClick={() => setDayNightPaused(!dayNightPaused)}
-        style={{
-          background: dayNightPaused ? '#e63946' : '#333',
-          color: '#fff',
-          border: 'none',
-          borderRadius: 4,
-          padding: '2px 8px',
-          cursor: 'pointer',
-          fontFamily: 'monospace',
-          fontSize: 11,
-        }}
-      >
-        {dayNightPaused ? 'Pauset' : 'Pause'}
-      </button>
-      <span style={{ color: '#666' }}>|</span>
-      {WEATHER_MODES.map(w => (
+    <>
+      <div style={{
+        position: 'fixed',
+        top: 12,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        fontFamily: 'monospace',
+        fontSize: 12,
+        color: '#ccc',
+        background: 'rgba(0,0,0,0.4)',
+        padding: '6px 16px',
+        borderRadius: 8,
+        pointerEvents: 'auto',
+        zIndex: 20,
+      }}>
+        <span style={{ fontSize: 16, fontWeight: 'bold', color: '#ffd700' }}>{timeStr}</span>
         <button
-          key={w}
-          onClick={() => setWeather(w)}
+          onClick={() => setDayNightPaused(!dayNightPaused)}
           style={{
-            background: weather === w ? '#2a9d8f' : '#333',
+            background: dayNightPaused ? '#e63946' : '#333',
             color: '#fff',
             border: 'none',
             borderRadius: 4,
@@ -374,10 +370,65 @@ function WeatherControls() {
             fontSize: 11,
           }}
         >
-          {WEATHER_LABELS[w]}
+          {dayNightPaused ? 'Pauset' : 'Pause'}
         </button>
-      ))}
-    </div>
+        <span style={{ color: '#666' }}>|</span>
+        {WEATHER_MODES.map(w => (
+          <button
+            key={w}
+            onClick={() => setWeather(w)}
+            style={{
+              background: weather === w ? '#2a9d8f' : '#333',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 4,
+              padding: '2px 8px',
+              cursor: 'pointer',
+              fontFamily: 'monospace',
+              fontSize: 11,
+            }}
+          >
+            {WEATHER_LABELS[w]}
+          </button>
+        ))}
+        <span style={{ color: '#666' }}>|</span>
+        {LIGHTING_MODES.map(m => (
+          <button
+            key={m}
+            onClick={() => setLightingMode(m)}
+            style={{
+              background: lightingMode === m ? '#e07040' : '#333',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 4,
+              padding: '2px 8px',
+              cursor: 'pointer',
+              fontFamily: 'monospace',
+              fontSize: 11,
+            }}
+          >
+            {LIGHTING_LABELS[m]}
+          </button>
+        ))}
+        <span style={{ color: '#666' }}>|</span>
+        <button
+          onClick={openSpawn}
+          style={{
+            background: '#333',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 4,
+            padding: '2px 8px',
+            cursor: 'pointer',
+            fontFamily: 'monospace',
+            fontSize: 11,
+          }}
+        >
+          Spawn
+        </button>
+      </div>
+      <AddressSearch open={spawnOpen} onClose={closeSpawn} />
+    </>
   )
 }
 

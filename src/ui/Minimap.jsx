@@ -47,6 +47,10 @@ export default function Minimap() {
   const expandedRef = useRef(false)
   const [expanded, setExpanded] = useState(false)
 
+  // Drag state
+  const [dragPos, setDragPos] = useState(null) // {x, y} or null = default position
+  const dragRef = useRef({ dragging: false, startX: 0, startY: 0, startPosX: 0, startPosY: 0 })
+
   // Synkroniser ref med state (for bruk i draw-callback uten re-create)
   expandedRef.current = expanded
 
@@ -101,11 +105,12 @@ export default function Minimap() {
       fetchTile(px, pz)
     }
 
-    // Klipp til sirkel
+    // Klipp til firkant med avrundede hjørner
     ctx.save()
     ctx.clearRect(0, 0, w, h)
+    const r = 16 * (w / currentSize) // avrunding skalert til canvas
     ctx.beginPath()
-    ctx.arc(cx, cy, cx - 2, 0, Math.PI * 2)
+    ctx.roundRect(2, 2, w - 4, h - 4, r)
     ctx.clip()
 
     // Tegn kartbilde som bakgrunn
@@ -135,22 +140,22 @@ export default function Minimap() {
     // Halvtransparent overlay for bedre lesbarhet av prikker
     ctx.fillStyle = 'rgba(0, 0, 0, 0.1)'
     ctx.beginPath()
-    ctx.arc(cx, cy, cx - 2, 0, Math.PI * 2)
+    ctx.roundRect(2, 2, w - 4, h - 4, r)
     ctx.fill()
 
     ctx.restore()
 
-    // Sirkelkant
+    // Firkantkant
     ctx.strokeStyle = 'rgba(100, 120, 140, 0.6)'
     ctx.lineWidth = 2
     ctx.beginPath()
-    ctx.arc(cx, cy, cx - 2, 0, Math.PI * 2)
+    ctx.roundRect(2, 2, w - 4, h - 4, r)
     ctx.stroke()
 
     // Klipp igjen for prikker
     ctx.save()
     ctx.beginPath()
-    ctx.arc(cx, cy, cx - 4, 0, Math.PI * 2)
+    ctx.roundRect(4, 4, w - 8, h - 8, r)
     ctx.clip()
 
     // Zombier (rode prikker)
@@ -216,22 +221,73 @@ export default function Minimap() {
   const currentSize = expanded ? MAP_SIZE_LARGE : MAP_SIZE
 
   const handleClick = useCallback(() => {
+    // Ikke toggle hvis vi nettopp draget
+    if (dragRef.current.didDrag) return
     setExpanded(prev => !prev)
   }, [])
+
+  const handlePointerDown = useCallback((e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const el = e.currentTarget
+    const rect = el.getBoundingClientRect()
+    dragRef.current = {
+      dragging: true,
+      didDrag: false,
+      startX: e.clientX,
+      startY: e.clientY,
+      startPosX: rect.left,
+      startPosY: rect.top,
+    }
+    el.setPointerCapture(e.pointerId)
+  }, [])
+
+  const handlePointerMove = useCallback((e) => {
+    const d = dragRef.current
+    if (!d.dragging) return
+    const dx = e.clientX - d.startX
+    const dy = e.clientY - d.startY
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      d.didDrag = true
+    }
+    setDragPos({
+      x: d.startPosX + dx,
+      y: d.startPosY + dy,
+    })
+  }, [])
+
+  const handlePointerUp = useCallback((e) => {
+    const d = dragRef.current
+    d.dragging = false
+    // Tillat klikk bare hvis vi ikke draget
+    if (!d.didDrag) {
+      // handleClick kjøres via onClick
+    }
+    // Reset didDrag etter en kort delay slik at onClick rekker å sjekke
+    setTimeout(() => { d.didDrag = false }, 50)
+  }, [])
+
+  const posStyle = dragPos
+    ? { left: dragPos.x, top: dragPos.y }
+    : { bottom: 24, right: 12 }
 
   return (
     <div
       onClick={handleClick}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
       style={{
         position: 'fixed',
-        bottom: 24,
-        right: 24,
+        ...posStyle,
         pointerEvents: 'auto',
-        cursor: 'pointer',
+        cursor: dragRef.current.dragging ? 'grabbing' : 'grab',
         zIndex: 5,
-        transition: 'width 0.2s ease, height 0.2s ease',
+        transition: dragRef.current.dragging ? 'none' : 'width 0.2s ease, height 0.2s ease',
         width: currentSize,
         height: currentSize,
+        userSelect: 'none',
+        touchAction: 'none',
       }}
     >
       <canvas
@@ -241,13 +297,13 @@ export default function Minimap() {
         style={{
           width: currentSize,
           height: currentSize,
-          borderRadius: '50%',
+          borderRadius: 12,
           transition: 'width 0.2s ease, height 0.2s ease',
         }}
       />
       <div style={{
         position: 'absolute',
-        top: -2,
+        top: 4,
         left: '50%',
         transform: 'translateX(-50%)',
         color: '#fff',

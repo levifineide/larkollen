@@ -54,13 +54,17 @@ export default function DayNightCycle() {
 
   useFrame((_, delta) => {
     const state = useWorldStore.getState()
-    const { timeOfDay, weather } = state
+    const { weather, lightingMode } = state
     state.advanceTime(delta)
+
+    // Lysmodus: override timeOfDay for dag/kveld
+    const timeOfDay = lightingMode === 'day' ? 0.5
+      : lightingMode === 'evening' ? 0.76
+      : state.timeOfDay
 
     const isStorm = weather === 'storm'
     const isRainy = weather === 'heavy' || isStorm
-    const isDrizzle = weather === 'drizzle'
-    const weatherDim = isStorm ? 0.35 : isRainy ? 0.55 : isDrizzle ? 0.8 : 1.0
+    const weatherDim = isStorm ? 0.35 : isRainy ? 0.55 : 1.0
 
     // Sol-vinkel
     const sunAngle = (timeOfDay - 0.25) * Math.PI * 2
@@ -139,8 +143,12 @@ export default function DayNightCycle() {
   })
 
   // Sky-parametere
-  const timeOfDay = useWorldStore(s => s.timeOfDay)
+  const rawTimeOfDay = useWorldStore(s => s.timeOfDay)
   const weather = useWorldStore(s => s.weather)
+  const lightingMode = useWorldStore(s => s.lightingMode)
+  const timeOfDay = lightingMode === 'day' ? 0.5
+    : lightingMode === 'evening' ? 0.76
+    : rawTimeOfDay
   const sunAngle = (timeOfDay - 0.25) * Math.PI * 2
   const elevation = Math.sin(sunAngle)
   const azimuth = Math.cos(sunAngle)

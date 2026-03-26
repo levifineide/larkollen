@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { useGLTF, useAnimations } from '@react-three/drei'
+import { useGLTF, useAnimations, useTexture } from '@react-three/drei'
 import * as THREE from 'three'
 
 const MODEL_PATH = '/models/zombie.glb'
@@ -30,17 +30,32 @@ function ZombieModelGLB({ animState }) {
   const { actions } = useAnimations(animations, group)
   const currentAction = useRef('idle')
   const clonedScene = useRef()
+  const colorMap = useTexture('/models/colormap.png')
 
-  // Klon scene for unikhet (flere zombier deler samme GLB)
+  // Klon scene for unikhet og sett tekstur
   useEffect(() => {
+    colorMap.flipY = false
+    colorMap.colorSpace = THREE.SRGBColorSpace
     clonedScene.current = scene.clone(true)
     clonedScene.current.traverse((child) => {
       if (child.isMesh) {
         child.castShadow = true
         child.frustumCulled = true
+        child.material = child.material.clone()
+        child.material.map = colorMap
+        child.material.needsUpdate = true
       }
     })
-  }, [scene])
+    // Apply to original scene too (used by primitive)
+    scene.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true
+        child.material = child.material.clone()
+        child.material.map = colorMap
+        child.material.needsUpdate = true
+      }
+    })
+  }, [scene, colorMap])
 
   useFrame(() => {
     const target = animState || 'idle'
@@ -60,8 +75,10 @@ function ZombieModelGLB({ animState }) {
     currentAction.current = target
   })
 
+  // Zombie-modell normalisert til ~1.66m, sentrert ved y=0.
+  // Flytt opp 0.83 så føttene treffer bakken.
   return (
-    <group ref={group} scale={[0.01, 0.01, 0.01]}>
+    <group ref={group} position={[0, 0.83, 0]}>
       <primitive object={scene} />
     </group>
   )

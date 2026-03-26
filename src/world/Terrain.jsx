@@ -2,6 +2,7 @@ import { useMemo, useEffect, useRef } from 'react'
 import { useGLTF } from '@react-three/drei'
 import { RigidBody, CuboidCollider } from '@react-three/rapier'
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { getTerrainHeight, setTerrainMesh } from './terrainHeight'
 
 /**
@@ -57,6 +58,26 @@ function GLBTerrain() {
   const { scene } = useGLTF('/map/terrain.glb')
   const groupRef = useRef()
 
+  // Bygg kollisjon-geometri fra GLB-terrengets meshes (merge alle)
+  const collisionGeo = useMemo(() => {
+    const geos = []
+    scene.updateMatrixWorld(true)
+    scene.traverse(child => {
+      if (child.isMesh && child.geometry) {
+        const cloned = child.geometry.clone()
+        cloned.applyMatrix4(child.matrixWorld)
+        // Fjern attributter Rapier ikke trenger for å spare minne
+        for (const key of Object.keys(cloned.attributes)) {
+          if (key !== 'position') cloned.deleteAttribute(key)
+        }
+        geos.push(cloned)
+      }
+    })
+    if (geos.length === 0) return null
+    if (geos.length === 1) return geos[0]
+    return mergeGeometries(geos)
+  }, [scene])
+
   useMemo(() => {
     scene.traverse(child => {
       if (child.isMesh) {
@@ -78,6 +99,13 @@ function GLBTerrain() {
   return (
     <group ref={groupRef}>
       <primitive object={scene} />
+      {/* Trimesh-collider fra GLB-terrenget – nødvendig for kjøretøy-fysikk */}
+      {collisionGeo && (
+        <RigidBody type="fixed" colliders="trimesh">
+          <mesh geometry={collisionGeo} visible={false} />
+        </RigidBody>
+      )}
+      {/* Flat catch-all under terrenget */}
       <RigidBody type="fixed">
         <CuboidCollider args={[2275, 0.5, 3340]} position={[0, -5, 0]} />
       </RigidBody>

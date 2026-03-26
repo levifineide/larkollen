@@ -77,7 +77,7 @@ export function InputSystem() {
     }
 
     const onMouseDown = (e) => {
-      if (e.button === 0 && inputState.pointerLocked) inputState.shoot = true
+      if (e.button === 0) inputState.shoot = true
       if (e.button === 2) inputState.aim = true
     }
 
@@ -112,12 +112,8 @@ export function InputSystem() {
       }
     }
 
-    // Klikk på siden → fang musepeker
-    const onClick = () => {
-      if (!document.pointerLockElement) {
-        document.documentElement.requestPointerLock().catch(() => {})
-      }
-    }
+    // Ingen pointer lock – musepeker forblir synlig
+    const onClick = () => {}
 
     document.addEventListener('keydown', onKeyDown)
     document.addEventListener('keyup', onKeyUp)

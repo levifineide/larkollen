@@ -8,13 +8,16 @@ export const useWorldStore = create((set, get) => ({
   mapSource: 'procedural', // 'procedural' | 'glb'
 
   // Vær
-  weather: 'none', // 'none' | 'drizzle' | 'heavy' | 'storm'
+  weather: 'none', // 'none' | 'heavy' | 'storm'
   windStrength: 0.2,
 
   // Dag/natt – timeOfDay: 0..1 (0=midnatt, 0.25=soloppgang, 0.5=midt på dagen, 0.75=solnedgang)
   timeOfDay: 0.35, // start litt etter soloppgang
   dayDuration: DAY_DURATION,
   dayNightPaused: false,
+
+  // Lysmodus: 'normal' (følger klokke), 'day' (alltid dagslys), 'evening' (alltid kveld)
+  lightingMode: 'normal',
 
   zombieCount: 0,
   vehicles: {},
@@ -29,6 +32,7 @@ export const useWorldStore = create((set, get) => ({
   setWindStrength: (windStrength) => set({ windStrength }),
   setTimeOfDay: (timeOfDay) => set({ timeOfDay: timeOfDay % 1 }),
   setDayNightPaused: (paused) => set({ dayNightPaused: paused }),
+  setLightingMode: (mode) => set({ lightingMode: mode }),
   advanceTime: (deltaSec) => {
     const s = get()
     if (s.dayNightPaused) return

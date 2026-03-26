@@ -66,7 +66,7 @@ function RemotePlayerGLB({ data }) {
   })
 
   return (
-    <group ref={group} scale={[0.01, 0.01, 0.01]}>
+    <group ref={group} position={[0, -0.8, 0]}>
       <primitive object={scene} />
     </group>
   )

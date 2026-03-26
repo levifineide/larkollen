@@ -238,10 +238,12 @@ function Scene({ cameraYaw, cameraPitch, introPhase, onIntroComplete }) {
   )
 }
 
+const SKIP_MENU = import.meta.env.VITE_SKIP_MENU === 'true'
+
 export default function GameApp() {
-  const [started, setStarted] = useState(false)
+  const [started, setStarted] = useState(SKIP_MENU)
   const [showLobby, setShowLobby] = useState(false)
-  const [introPhase, setIntroPhase] = useState(true)
+  const [introPhase, setIntroPhase] = useState(!SKIP_MENU)
   const cameraYaw   = useRef(0)
   const cameraPitch = useRef(0.15)
 
@@ -258,6 +260,8 @@ export default function GameApp() {
   useEffect(() => {
     if (effectiveStarted && introPhase) {
       setGameState(GameState.INTRO)
+    } else if (effectiveStarted && !introPhase) {
+      setGameState(GameState.PLAYING)
     }
   }, [effectiveStarted, introPhase, setGameState])
 
@@ -306,8 +310,12 @@ export default function GameApp() {
         }}
         dpr={1}
         style={{
+          position: 'fixed',
+          inset: 0,
+          width: '100vw',
+          height: '100vh',
           background: introPhase ? '#1a1a2e' : '#87CEEB',
-          cursor: introPhase ? 'default' : 'none',
+          cursor: 'default',
         }}
       >
         <Scene
@@ -330,25 +338,8 @@ export default function GameApp() {
           <MissionPanel />
           <Minimap />
           <DialoguePanel />
-          <PointerLockOverlay />
 
-          <div style={{
-            position: 'fixed',
-            bottom: 24,
-            right: 24,
-            color: '#aaa',
-            fontSize: 11,
-            fontFamily: 'monospace',
-            pointerEvents: 'none',
-            lineHeight: 1.8,
-            textAlign: 'right',
-          }}>
-            WASD: Beveg &nbsp;|&nbsp; E: NPC / Plukk opp<br />
-            Shift: Sprint &nbsp;|&nbsp; Ctrl: Knele<br />
-            Space: Hopp &nbsp;|&nbsp; F: Kjøretøy<br />
-            G: Skyt &nbsp;|&nbsp; T: Sikt &nbsp;|&nbsp; R: Lad om<br />
-            1-7: Våpen &nbsp;|&nbsp; Q (hold): Våpenhjul
-          </div>
+          <HelpButton />
 
           {isConnected && (
             <div style={{
@@ -370,5 +361,66 @@ export default function GameApp() {
         </>
       )}
     </ErrorBoundary>
+  )
+}
+
+function HelpButton() {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{
+          position: 'fixed',
+          bottom: 24,
+          right: 200,
+          width: 28,
+          height: 28,
+          borderRadius: '50%',
+          border: '1px solid #555',
+          background: open ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.4)',
+          color: '#ccc',
+          fontSize: 14,
+          fontFamily: 'monospace',
+          fontWeight: 'bold',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 6,
+          pointerEvents: 'auto',
+        }}
+      >
+        ?
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'fixed',
+          bottom: 60,
+          right: 180,
+          background: 'rgba(0, 0, 0, 0.75)',
+          border: '1px solid #444',
+          borderRadius: 8,
+          padding: '12px 18px',
+          fontFamily: 'monospace',
+          fontSize: 12,
+          color: '#ccc',
+          lineHeight: 2,
+          pointerEvents: 'none',
+          zIndex: 6,
+          backdropFilter: 'blur(4px)',
+          whiteSpace: 'nowrap',
+        }}>
+          <div style={{ color: '#fff', fontWeight: 'bold', marginBottom: 4, fontSize: 13 }}>Kontroller</div>
+          WASD: Beveg &nbsp;|&nbsp; E: NPC / Plukk opp<br />
+          Shift: Sprint &nbsp;|&nbsp; Ctrl: Knele<br />
+          Space: Hopp &nbsp;|&nbsp; F: Kjøretøy<br />
+          G: Skyt &nbsp;|&nbsp; T: Sikt &nbsp;|&nbsp; R: Lad om<br />
+          1-7: Våpen &nbsp;|&nbsp; Q (hold): Våpenhjul
+        </div>
+      )}
+    </>
   )
 }

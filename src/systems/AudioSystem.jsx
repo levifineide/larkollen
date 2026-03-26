@@ -106,24 +106,13 @@ class AudioManager {
       loop: true,
     })
 
-    // === Musikk (dynamisk – 3 lag) ===
-    this.music.calm = loadSound('/sounds/music_calm.mp3', {
-      volume: 0,
-      loop: true,
-    })
-    this.music.tense = loadSound('/sounds/music_tense.mp3', {
-      volume: 0,
-      loop: true,
-    })
-    this.music.intense = loadSound('/sounds/music_intense.mp3', {
-      volume: 0,
-      loop: true,
-    })
+    // === Musikk – kun intro-musikk (brukes som eneste musikkspor) ===
+    // Dynamisk calm/tense/intense er deaktivert – bare intro-musikken spilles
 
     // === Spesialmusikk ===
     this.musicSpecial.intro = loadSound('/sounds/music_intro.mp3', {
       volume: VOLUMES.music,
-      loop: false,
+      loop: true,
     })
     this.musicSpecial.victory = loadSound('/sounds/music_victory.mp3', {
       volume: VOLUMES.music,
@@ -192,39 +181,18 @@ class AudioManager {
     }
   }
 
-  // Start all gameplay-musikk (alle 3 spor starter, bare ett har volum)
+  // Start musikk – spiller intro-musikken som eneste musikkspor (loop)
   startMusic() {
-    Object.values(this.music).forEach(m => {
-      if (m && !m.playing()) m.play()
-    })
-    this.setMusicIntensity('calm')
+    this.playSpecial('intro')
   }
 
   stopMusic() {
-    Object.values(this.music).forEach(m => {
-      if (m && m.playing()) {
-        m.fade(m.volume(), 0, 1000)
-        setTimeout(() => { if (m && !this._disposed) m.stop() }, 1100)
-      }
-    })
+    this.stopSpecial('intro')
   }
 
-  // Crossfade mellom calm/tense/intense
-  setMusicIntensity(intensity) {
-    if (intensity === this.musicIntensity) return
-    this.musicIntensity = intensity
-
-    const targets = {
-      calm: { calm: VOLUMES.music, tense: 0, intense: 0 },
-      tense: { calm: 0, tense: VOLUMES.music, intense: 0 },
-      intense: { calm: 0, tense: 0, intense: VOLUMES.music },
-    }
-    const vols = targets[intensity] || targets.calm
-
-    Object.entries(vols).forEach(([key, vol]) => {
-      const m = this.music[key]
-      if (m) m.fade(m.volume(), vol, 1500)
-    })
+  // Deaktivert – ingen dynamisk musikk-crossfade
+  setMusicIntensity(_intensity) {
+    // no-op
   }
 
   // Spesialmusikk (intro/victory)
@@ -320,7 +288,7 @@ export default function AudioSystem() {
     const {
       health, weapons, activeWeapon, isDriving, isInWater,
     } = usePlayerStore.getState()
-    const { weather, zombieCount } = useWorldStore.getState()
+    const { weather } = useWorldStore.getState()
 
     // --- Skade-lyd ---
     if (health < prevHealth.current) {
@@ -334,15 +302,6 @@ export default function AudioSystem() {
       audioManager.playGunshot(activeWeapon)
     }
     prevAmmo.current = currentAmmo
-
-    // --- Dynamisk musikk ---
-    if (zombieCount > 10) {
-      audioManager.setMusicIntensity('intense')
-    } else if (zombieCount > 5) {
-      audioManager.setMusicIntensity('tense')
-    } else {
-      audioManager.setMusicIntensity('calm')
-    }
 
     // --- Fottrinn ---
     const moving = inputState.forward || inputState.backward ||

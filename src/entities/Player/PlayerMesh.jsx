@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { useGLTF, useAnimations } from '@react-three/drei'
+import { useGLTF, useAnimations, useTexture } from '@react-three/drei'
+import * as THREE from 'three'
 import { usePlayerStore } from '../../stores/usePlayerStore'
 import { inputState } from '../../systems/InputSystem'
 
@@ -39,16 +40,22 @@ function PlayerModelGLB() {
   const { scene, animations } = useGLTF(MODEL_PATH)
   const { actions } = useAnimations(animations, group)
   const currentAction = useRef('Idle')
+  const colorMap = useTexture('/models/colormap.png')
 
-  // Klon scene så den er unik per instans
+  // Klon scene og sett tekstur + skygge
   useEffect(() => {
+    colorMap.flipY = false
+    colorMap.colorSpace = THREE.SRGBColorSpace
     scene.traverse((child) => {
       if (child.isMesh) {
         child.castShadow = true
         child.receiveShadow = false
+        child.material = child.material.clone()
+        child.material.map = colorMap
+        child.material.needsUpdate = true
       }
     })
-  }, [scene])
+  }, [scene, colorMap])
 
   useFrame(() => {
     const { isDriving, isReloading, health, isSwimming } = usePlayerStore.getState()
@@ -91,8 +98,9 @@ function PlayerModelGLB() {
     currentAction.current = name
   }
 
+  // Modell normalisert til ~1.72m. Flytt ned -0.8 så føttene matcher capsule-bunnen.
   return (
-    <group ref={group} scale={[0.01, 0.01, 0.01]}>
+    <group ref={group} position={[0, -0.8, 0]}>
       <primitive object={scene} />
     </group>
   )
@@ -131,7 +139,7 @@ export default function PlayerMesh() {
       })
   }, [])
 
-  if (!checked) return null
-
-  return hasModel ? <PlayerModelGLB /> : <PlayerCapsuleFallback />
+  // Vis capsule mens vi sjekker, bytt til GLB når klar
+  if (!checked || !hasModel) return <PlayerCapsuleFallback />
+  return <PlayerModelGLB />
 }

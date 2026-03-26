@@ -3,7 +3,7 @@ import { create } from 'zustand'
 export const usePlayerStore = create((set, get) => ({
   health: 100,
   stamina: 100,
-  position: [0, 2, 48],
+  position: [50, 2, 0],
   isDriving: false,
   activeVehicleId: null,
   isCrouching: false,
