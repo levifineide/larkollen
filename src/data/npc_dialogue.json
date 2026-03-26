@@ -1,0 +1,106 @@
+{
+  "erik": {
+    "name": "Erik",
+    "greeting": "Hei! Er du også en overlever? Jeg trodde jeg var alene...",
+    "lines": [
+      {
+        "text": "Det begynte i natt. Plutselig var de overalt – de døde som gikk igjen.",
+        "next": 1
+      },
+      {
+        "text": "Vi må bevise at vi kan overleve her. Drep 10 av dem, så vet vi at vi har en sjanse.",
+        "mission": "overlev",
+        "next": null
+      }
+    ],
+    "afterMission": "Bra jobba! Du er tøffere enn du ser ut. Snakk med Ingrid – hun vet om drivstoff.",
+    "recruited": "Jeg følger deg. La oss klare dette sammen!"
+  },
+  "ingrid": {
+    "name": "Ingrid",
+    "greeting": "Å gudskjelov, et annet menneske! Hør her, jeg vet hvor det er bensin.",
+    "lines": [
+      {
+        "text": "Bensinstasjonen nordøst herfra har fortsatt drivstoff i tankene.",
+        "next": 1
+      },
+      {
+        "text": "Hent en kanne drivstoff og bring den tilbake hit. Vi trenger det for å komme oss videre.",
+        "mission": "drivstoff",
+        "next": null
+      }
+    ],
+    "afterMission": "Fantastisk! Nå har vi nok til å fylle opp en bil. Men vi kan ikke dra ennå...",
+    "recruited": "Jeg er med deg. Vis vei!"
+  },
+  "ole": {
+    "name": "Ole",
+    "greeting": "Hjelp! De er overalt! Jeg klarer meg ikke alene!",
+    "lines": [
+      {
+        "text": "Det er flere overlevende gjemt rundt i Larkollen. De tør ikke komme ut.",
+        "next": 1
+      },
+      {
+        "text": "Finn tre overlevende og bring dem til det sikre huset ved kirken. Vær så snill!",
+        "mission": "redde_mange",
+        "next": null
+      }
+    ],
+    "afterMission": "Du reddet dem! Du er en helt. Nå er det bare én ting igjen å gjøre...",
+    "recruited": "Takk! Jeg følger etter deg."
+  },
+  "astrid": {
+    "name": "Astrid",
+    "greeting": "Jeg har hørt rykter om en kur. Den skal være på Eløya, den lille øya ute i fjorden.",
+    "lines": [
+      {
+        "text": "Problemet er at vi trenger en båt med nok drivstoff til å komme dit.",
+        "next": 1
+      },
+      {
+        "text": "Finn båten ved brygga, fyll den med bensin, og seil til Eløya. Kuren venter der.",
+        "mission": "til_eloya",
+        "next": null
+      }
+    ],
+    "afterMission": "Du klarte det! Kuren er funnet. Larkollen kan reddes!",
+    "recruited": "La oss dra til Eløya sammen!"
+  },
+  "survivor_1": {
+    "name": "Maja",
+    "greeting": "Vær så snill, ikke la meg bli igjen her! Kan du ta meg med til et trygt sted?",
+    "lines": [
+      {
+        "text": "Jeg har gjemt meg her i to dager. Jeg hører dem utenfor hele tiden...",
+        "next": null
+      }
+    ],
+    "afterMission": "Takk for at du reddet meg!",
+    "recruited": "Endelig trygt! Jeg følger deg."
+  },
+  "survivor_2": {
+    "name": "Lars",
+    "greeting": "Hvem er du? Venn eller fiende? ...OK, du ser normal ut i hvert fall.",
+    "lines": [
+      {
+        "text": "Jeg har mat og vann for noen dager, men det hjelper ikke hvis de kommer inn.",
+        "next": null
+      }
+    ],
+    "afterMission": "Du er en livredder!",
+    "recruited": "La oss stikke herfra!"
+  },
+  "survivor_3": {
+    "name": "Hanne",
+    "greeting": "Å! Du skremte meg! Jeg trodde du var en av... dem.",
+    "lines": [
+      {
+        "text": "Familien min er der ute et sted. Vær så snill, ta meg til et trygt sted.",
+        "next": null
+      }
+    ],
+    "afterMission": "Tusen takk. Jeg håper familien min er trygg.",
+    "recruited": "Jeg stoler på deg. La oss gå."
+  }
+}

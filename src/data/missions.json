@@ -1,0 +1,100 @@
+{
+  "overlev": {
+    "id": "overlev",
+    "title": "Overlev",
+    "description": "Bevis at du kan overleve i denne helvetes-verdenen.",
+    "giver": "erik",
+    "objectives": [
+      {
+        "type": "kill_count",
+        "target": 10,
+        "description": "Drep 10 zombier"
+      }
+    ],
+    "xpReward": 500,
+    "unlocks": ["shotgun_ammo"],
+    "requiredLevel": 1,
+    "requiredMissions": []
+  },
+  "drivstoff": {
+    "id": "drivstoff",
+    "title": "Drivstoff",
+    "description": "Finn drivstoff på bensinstasjonen og bring det tilbake.",
+    "giver": "ingrid",
+    "objectives": [
+      {
+        "type": "reach_location",
+        "target": [80, 0, -40],
+        "radius": 10,
+        "description": "Gå til bensinstasjonen"
+      },
+      {
+        "type": "reach_location",
+        "target": [0, 0, 30],
+        "radius": 10,
+        "description": "Bring drivstoffet tilbake til Ingrid"
+      }
+    ],
+    "xpReward": 750,
+    "unlocks": ["vehicle_truck"],
+    "requiredLevel": 1,
+    "requiredMissions": ["overlev"]
+  },
+  "redde_mange": {
+    "id": "redde_mange",
+    "title": "Redde Mange",
+    "description": "Finn og eskorter overlevende til det sikre huset ved kirken.",
+    "giver": "ole",
+    "objectives": [
+      {
+        "type": "escort_npc",
+        "target": "survivor_1",
+        "destination": [0, 0, 0],
+        "radius": 15,
+        "description": "Eskorter Maja til kirken"
+      },
+      {
+        "type": "escort_npc",
+        "target": "survivor_2",
+        "destination": [0, 0, 0],
+        "radius": 15,
+        "description": "Eskorter Lars til kirken"
+      },
+      {
+        "type": "escort_npc",
+        "target": "survivor_3",
+        "destination": [0, 0, 0],
+        "radius": 15,
+        "description": "Eskorter Hanne til kirken"
+      }
+    ],
+    "xpReward": 1000,
+    "unlocks": ["rifle_ammo"],
+    "requiredLevel": 2,
+    "requiredMissions": ["drivstoff"]
+  },
+  "til_eloya": {
+    "id": "til_eloya",
+    "title": "Til Eløya",
+    "description": "Seil til Eløya og finn kuren som kan redde menneskeheten.",
+    "giver": "astrid",
+    "objectives": [
+      {
+        "type": "reach_location",
+        "target": [-60, 0, -200],
+        "radius": 15,
+        "description": "Finn båten ved brygga"
+      },
+      {
+        "type": "reach_location",
+        "target": [-60, 0, -350],
+        "radius": 25,
+        "description": "Seil til Eløya"
+      }
+    ],
+    "xpReward": 2000,
+    "unlocks": ["victory"],
+    "requiredLevel": 3,
+    "requiredMissions": ["redde_mange"]
+  }
+}
